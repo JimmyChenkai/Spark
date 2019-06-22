@@ -24,49 +24,43 @@ import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.types.{DataType, StructType}
 
 /**
- * Interface for a parser.
+ * parser接口类
  */
 @DeveloperApi
 trait ParserInterface {
   /**
-   * Parse a string to a [[LogicalPlan]].
+   * 字符串解析为逻辑计划
    */
   @throws[ParseException]("Text cannot be parsed to a LogicalPlan")
   def parsePlan(sqlText: String): LogicalPlan
-
   /**
-   * Parse a string to an [[Expression]].
+   * 字符串解析为Expression
    */
   @throws[ParseException]("Text cannot be parsed to an Expression")
   def parseExpression(sqlText: String): Expression
-
   /**
-   * Parse a string to a [[TableIdentifier]].
+   * 字符串解析为表语句
    */
   @throws[ParseException]("Text cannot be parsed to a TableIdentifier")
   def parseTableIdentifier(sqlText: String): TableIdentifier
-
   /**
-   * Parse a string to a [[FunctionIdentifier]].
+   * 字符串解析为函数
    */
   @throws[ParseException]("Text cannot be parsed to a FunctionIdentifier")
   def parseFunctionIdentifier(sqlText: String): FunctionIdentifier
-
   /**
-   * Parse a string to a multi-part identifier.
+   * 字符串解析为多表达式
    */
   @throws[ParseException]("Text cannot be parsed to a multi-part identifier")
   def parseMultipartIdentifier(sqlText: String): Seq[String]
-
   /**
-   * Parse a string to a [[StructType]]. The passed SQL string should be a comma separated list
-   * of field definitions which will preserve the correct Hive metadata.
+   * 字符串解析为结构化类型，
+   * 传递过来的Sql字符串必须是都好隔开的，同时要保留完整的hive元数据
    */
   @throws[ParseException]("Text cannot be parsed to a schema")
   def parseTableSchema(sqlText: String): StructType
-
   /**
-   * Parse a string to a [[DataType]].
+   * 字符串转为DataType
    */
   @throws[ParseException]("Text cannot be parsed to a DataType")
   def parseDataType(sqlText: String): DataType
