@@ -83,34 +83,35 @@ import org.apache.spark.sql.types._
 abstract class Expression extends TreeNode[Expression] {
 
   /**
-   * Returns true when an expression is a candidate for static evaluation before the query is
-   * executed. A typical use case: [[org.apache.spark.sql.catalyst.optimizer.ConstantFolding]]
-   *
-   * The following conditions are used to determine suitability for constant folding:
-   *  - A [[Coalesce]] is foldable if all of its children are foldable
-   *  - A [[BinaryExpression]] is foldable if its both left and right child are foldable
-   *  - A [[Not]], [[IsNull]], or [[IsNotNull]] is foldable if its child is foldable
-   *  - A [[Literal]] is foldable
-   *  - A [[Cast]] or [[UnaryMinus]] is foldable if its child is foldable
+   *  该属性用来标记表达式能否在查询执行之前直接静态计算。 
+   *  foldable 为true 的情况有两种，
+   *  一：是该表达式为 Literal 类型（“字面值”，例如常量等）
+   *  二：当且仅当其子表达式中foldable都为true时 如下
+   *     - [[Coalesce]] 当所有孩子节点foldable均为true
+   *     - [[BinaryExpression]] 左右孩子节点foldable均为true
+   *     - [[Not]], [[IsNull]], [[IsNotNull]] 孩子节点foldable均为true
+   *     - [[Literal]] foldabel为true
+   *     - [[Cast]] 或 [[UnaryMinus]] 孩子节点foldable均为true
    */
   def foldable: Boolean = false
 
   /**
-   * Returns true when the current expression always return the same result for fixed inputs from
-   * children. The non-deterministic expressions should not change in number and order. They should
-   * not be evaluated during the query planning.
+   * 当前表达式始终为来自的固定输入返回相同结果时，返回true。
+   * 子节点。非确定性表达式不应在数量和顺序上发生变化。他们应该
+   * 在查询计划期间不进行评估。
    *
-   * Note that this means that an expression should be considered as non-deterministic if:
-   * - it relies on some mutable internal state, or
-   * - it relies on some implicit input that is not part of the children expression list.
-   * - it has non-deterministic child or children.
-   * - it assumes the input satisfies some certain condition via the child operator.
+   * 注意，这意味着一个表达式应该被认为是不确定性的。如果:
+   * - 它依赖于一些可变的内部状态，或者
+   * - 它依赖一些不属于子表达式列表的隐式输入。
+   * - 它有一个或多个不确定的孩子节点。
+   * - 它假定输入通过子运算符满足某些特定条件。
    *
-   * An example would be `SparkPartitionID` that relies on the partition id returned by TaskContext.
-   * By default leaf expressions are deterministic as Nil.forall(_.deterministic) returns true.
+   * “sparkPartitionID”就是一个例子，它依赖于taskContext返回的分区ID。
+   * 默认情况下，叶表达式是确定性的，为零。forall（.determinatic）返回true。
    */
   lazy val deterministic: Boolean = children.forall(_.deterministic)
 
+  //该属性用来标记表达式是否可能输出 Null 值， 一般在生成的 J肝a 代码中对相关条件进行判断 
   def nullable: Boolean
 
   /**
@@ -196,33 +197,33 @@ abstract class Expression extends TreeNode[Expression] {
   protected def doGenCode(ctx: CodegenContext, ev: ExprCode): ExprCode
 
   /**
-   * Returns `true` if this expression and all its children have been resolved to a specific schema
-   * and input data types checking passed, and `false` if it still contains any unresolved
-   * placeholders or has data types mismatch.
-   * Implementations of expressions should override this if the resolution of this type of
-   * expression involves more than just the resolution of its children and type checking.
+   * 如果已将此表达式及其所有子级解析为特定的架构并通过了输入数据类型检查，则返回“true”；
+   * 如果仍包含任何未解析的占位符或数据类型不匹配，则返回“false”。
+   * 如果此类型的解析为表达式不仅仅涉及其子级的解析和类型检查。
    */
   lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 
   /**
-   * Returns the [[DataType]] of the result of evaluating this expression.  It is
-   * invalid to query the dataType of an unresolved expression (i.e., when `resolved` == false).
+   * 返回计算此表达式的结果的[[DataType]]。它是
+   * 查询未解析表达式的数据类型无效（即当'resolved`==false'时）。
    */
   def dataType: DataType
 
   /**
-   * Returns true if  all the children of this expression have been resolved to a specific schema
-   * and false if any still contains any unresolved placeholders.
+   * 如果此表达式的所有子级都已解析为特定架构，则返回true
+   * 如果仍然包含任何未解析的占位符，则返回false。
    */
   def childrenResolved: Boolean = children.forall(_.resolved)
 
   /**
-   * Returns an expression where a best effort attempt has been made to transform `this` in a way
-   * that preserves the result but removes cosmetic variations (case sensitivity, ordering for
-   * commutative operations, etc.)  See [[Canonicalize]] for more details.
+   * 返回经过规范化（ Canonicalize ）处理后的表达式。 规范化处理会在确保输
+   * 出结果相同的前提下通过一些规则对表达式进行重写，具体逻辑可以参见 Canonicalize 工具类
    *
-   * `deterministic` expressions where `this.canonicalized == other.canonicalized` will always
-   * evaluate to the same result.
+   * 返回一个表达式，其中已尽最大努力以某种方式转换“this”
+   * 它保留了结果，但消除了外观变化（区分大小写，订购
+   * 交换操作等）有关详细信息，请参阅[[规范化]]。
+   *
+   * ` deterministic`expressions where`this.canonicalized==other.canonicalized`将始终评估结果相同。
    */
   lazy val canonicalized: Expression = {
     val canonicalizedChildren = children.map(_.canonicalized)
@@ -230,19 +231,19 @@ abstract class Expression extends TreeNode[Expression] {
   }
 
   /**
-   * Returns true when two expressions will always compute the same result, even if they differ
-   * cosmetically (i.e. capitalization of names in attributes may be different).
+   * 当两个表达式总是计算相同的结果时返回true，即使它们不同
+   * 修饰（即属性中名称的大写可能不同）。
    *
-   * See [[Canonicalize]] for more details.
+   * 更多细节[[Canonicalize]] 
    */
   def semanticEquals(other: Expression): Boolean =
     deterministic && other.deterministic && canonicalized == other.canonicalized
 
   /**
-   * Returns a `hashCode` for the calculation performed by this expression. Unlike the standard
-   * `hashCode`, an attempt has been made to eliminate cosmetic differences.
+   * 返回此表达式执行的计算的“hashcode”。不同于标准
+   * ` hashcode`，试图消除外观差异。
    *
-   * See [[Canonicalize]] for more details.
+   * 更多细节[[Canonicalize]] 
    */
   def semanticHash(): Int = canonicalized.hashCode()
 
@@ -254,8 +255,8 @@ abstract class Expression extends TreeNode[Expression] {
   def checkInputDataTypes(): TypeCheckResult = TypeCheckResult.TypeCheckSuccess
 
   /**
-   * Returns a user-facing string representation of this expression's name.
-   * This should usually match the name of the function in SQL.
+   * 返回此表达式名称的面向用户的字符串表示形式。
+   * 这通常应该与SQL中的函数名匹配。
    */
   def prettyName: String = nodeName.toLowerCase(Locale.ROOT)
 
@@ -265,8 +266,7 @@ abstract class Expression extends TreeNode[Expression] {
     case single => single :: Nil
   }
 
-  // Marks this as final, Expression.verboseString should never be called, and thus shouldn't be
-  // overridden by concrete classes.
+  // 将此标记为final，不应调用expression.verbosestring，因此不应由具体类重写。
   final override def verboseString(maxFields: Int): String = simpleString(maxFields)
 
   override def simpleString(maxFields: Int): String = toString
@@ -275,8 +275,8 @@ abstract class Expression extends TreeNode[Expression] {
     flatArguments.toSeq, "(", ", ", ")", SQLConf.get.maxToStringFields)
 
   /**
-   * Returns SQL representation of this expression.  For expressions extending [[NonSQLExpression]],
-   * this method may return an arbitrary user facing string.
+   * 返回此表达式的SQL表示形式。对于扩展的表达式[[nonsqlexpression]],
+   * 此方法可能返回任意面向用户的字符串。
    */
   def sql: String = {
     val childrenSQL = children.map(_.sql).mkString(", ")
