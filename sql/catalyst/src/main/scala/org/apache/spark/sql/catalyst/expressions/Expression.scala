@@ -120,22 +120,22 @@ abstract class Expression extends TreeNode[Expression] {
   private lazy val _references: AttributeSet =
     AttributeSet.fromAttributeSets(children.map(_.references))
 
+  //返回值为 AttributeSet 类型，表示该 Expression 中会涉及的属性值，默认情况为所有子节点中属性值的集合。
   def references: AttributeSet = _references
 
-  /** Returns the result of evaluating this expression on a given input Row */
+  /** 一条输入，并返回该输入对应的表示结果 */
   def eval(input: InternalRow = null): Any
 
   /**
-   * Returns an [[ExprCode]], that contains the Java source code to generate the result of
-   * evaluating the expression on an input row.
+   * 返回一个多维数组[[ExprCode]] ，
+   * 这个多维数组包含java源码，该java源码是依据输入的row而产生的对应的表达式
    *
    * @param ctx a [[CodegenContext]]
    * @return [[ExprCode]]
    */
   def genCode(ctx: CodegenContext): ExprCode = {
     ctx.subExprEliminationExprs.get(this).map { subExprState =>
-      // This expression is repeated which means that the code to evaluate it has already been added
-      // as a function before. In that case, we just re-use it.
+      // 此表达式重复，这意味着用于计算它的代码以前已作为函数添加。在这种情况下，我们只是重复使用它。
       ExprCode(ctx.registerComment(this.toString), subExprState.isNull, subExprState.value)
     }.getOrElse {
       val isNull = ctx.freshName("isNull")
@@ -145,7 +145,7 @@ abstract class Expression extends TreeNode[Expression] {
         JavaCode.variable(value, dataType)))
       reduceCodeSize(ctx, eval)
       if (eval.code.toString.nonEmpty) {
-        // Add `this` in the comment.
+        // 备注中添加 'this'
         eval.copy(code = ctx.registerComment(this.toString) + eval.code)
       } else {
         eval
@@ -185,9 +185,9 @@ abstract class Expression extends TreeNode[Expression] {
   }
 
   /**
-   * Returns Java source code that can be compiled to evaluate this expression.
-   * The default behavior is to call the eval method of the expression. Concrete expression
-   * implementations should override this to do actual code generation.
+   * 返回可以编译此表达式的Java源代码。
+   * 默认是调用表达式的eval入口方法。
+   * 具体的表达式实现应该重写它来执行实际的代码生成。
    *
    * @param ctx a [[CodegenContext]]
    * @param ev an [[ExprCode]] with unique terms.
@@ -247,9 +247,9 @@ abstract class Expression extends TreeNode[Expression] {
   def semanticHash(): Int = canonicalized.hashCode()
 
   /**
-   * Checks the input data types, returns `TypeCheckResult.success` if it's valid,
-   * or returns a `TypeCheckResult` with an error message if invalid.
-   * Note: it's not valid to call this method until `childrenResolved == true`.
+   * 检查输入数据类型，返回'typecheckresult.success'如果有效，
+   * 或者返回“typecheckresult”，如果无效，则返回错误消息。
+   * 注意：在'childrenresolved==true'之前调用此方法是无效的。
    */
   def checkInputDataTypes(): TypeCheckResult = TypeCheckResult.TypeCheckSuccess
 
@@ -259,6 +259,7 @@ abstract class Expression extends TreeNode[Expression] {
    */
   def prettyName: String = nodeName.toLowerCase(Locale.ROOT)
 
+  //参数扁平化，这个比较好理解
   protected def flatArguments: Iterator[Any] = productIterator.flatMap {
     case t: Iterable[_] => t
     case single => single :: Nil
