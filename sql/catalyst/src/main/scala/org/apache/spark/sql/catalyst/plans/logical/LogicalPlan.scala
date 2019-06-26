@@ -33,7 +33,7 @@ abstract class LogicalPlan
   with QueryPlanConstraints
   with Logging {
 
-  /** Returns true if this subtree has data from a streaming data source. */
+  /** 如果此子树具有来自流数据源的数据，则返回true。 */
   def isStreaming: Boolean = children.exists(_.isStreaming)
 
   override def verboseStringWithSuffix(maxFields: Int): String = {
@@ -41,10 +41,10 @@ abstract class LogicalPlan
   }
 
   /**
-   * Returns the maximum number of rows that this plan may compute.
+   * 返回此计划可以计算的最大行数。
    *
-   * Any operator that a Limit can be pushed passed should override this function (e.g., Union).
-   * Any operator that can push through a Limit should override this function (e.g., Project).
+   * 任何可以推送限制的运算符都应重写此函数 (e.g., Union).
+   * 任何可以通过限制的运算符都应重写此函数 (e.g., Project).
    */
   def maxRows: Option[Long] = None
 
@@ -54,11 +54,11 @@ abstract class LogicalPlan
   def maxRowsPerPartition: Option[Long] = maxRows
 
   /**
-   * Returns true if this expression and all its children have been resolved to a specific schema
-   * and false if it still contains any unresolved placeholders. Implementations of LogicalPlan
-   * can override this (e.g.
+   * 如果此表达式及其所有子级都已解析为特定架构，则返回true
+   * 如果它仍然包含任何未解析的占位符，则返回false。
+   * 逻辑计划的实现可以覆盖此 (e.g.
    * [[org.apache.spark.sql.catalyst.analysis.UnresolvedRelation UnresolvedRelation]]
-   * should return `false`).
+   * 应该返回`false`).
    */
   lazy val resolved: Boolean = expressions.forall(_.resolved) && childrenResolved
 
