@@ -49,7 +49,7 @@ abstract class LogicalPlan
   def maxRows: Option[Long] = None
 
   /**
-   * Returns the maximum number of rows this plan may compute on each partition.
+   * 返回此计划在每个分区上可以计算的最大行数。
    */
   def maxRowsPerPartition: Option[Long] = maxRows
 
@@ -65,14 +65,14 @@ abstract class LogicalPlan
   override protected def statePrefix = if (!resolved) "'" else super.statePrefix
 
   /**
-   * Returns true if all its children of this query plan have been resolved.
+   * 如果已解析此查询计划的所有子级，则返回true。
    */
   def childrenResolved: Boolean = children.forall(_.resolved)
 
   /**
-   * Resolves a given schema to concrete [[Attribute]] references in this query plan. This function
-   * should only be called on analyzed plans since it will throw [[AnalysisException]] for
-   * unresolved [[Attribute]]s.
+   * 在此查询计划中将给定架构解析为具体的[[属性]]引用。
+   * 此函数只应在分析的计划上调用，因为它将为未解析的[[Attribute]]s抛出[[AnalysisException]]
+   * 
    */
   def resolve(schema: StructType, resolver: Resolver): Seq[Attribute] = {
     schema.map { field =>
@@ -91,9 +91,9 @@ abstract class LogicalPlan
   private[this] lazy val outputAttributes = AttributeSeq(output)
 
   /**
-   * Optionally resolves the given strings to a [[NamedExpression]] using the input from all child
-   * nodes of this LogicalPlan. The attribute is expressed as
-   * string in the following form: `[scope].AttributeName.[nested].[fields]...`.
+   * 
+   * 也可以使用此逻辑计划的所有子节点的输入将给定字符串解析为 [[NamedExpression]] 。
+   * 属性以以下形式表示为字符串：属性以以下形式表示为字符串：
    */
   def resolveChildren(
       nameParts: Seq[String],
@@ -101,8 +101,8 @@ abstract class LogicalPlan
     childAttributes.resolve(nameParts, resolver)
 
   /**
-   * Optionally resolves the given strings to a [[NamedExpression]] based on the output of this
-   * LogicalPlan. The attribute is expressed as string in the following form:
+   * 根据此逻辑计划的输出，可选地将给定字符串解析为[[NamedExpression]] 。
+   * 该属性以以下形式表示为字符串：
    * `[scope].AttributeName.[nested].[fields]...`.
    */
   def resolve(
@@ -111,9 +111,10 @@ abstract class LogicalPlan
     outputAttributes.resolve(nameParts, resolver)
 
   /**
-   * Given an attribute name, split it to name parts by dot, but
-   * don't split the name parts quoted by backticks, for example,
-   * `ab.cd`.`efg` should be split into two parts "ab.cd" and "efg".
+   * 给定一个属性名，将其按点拆分为名称部分, 但是
+   * 不要拆分反勾号引用的名称部分,例如
+   * `ab.cd`.`efg` 应该拆分为两部分分别为 "ab.cd" 何 "efg".
+   * 意思就是反勾引用里面是不需要拆分的
    */
   def resolveQuoted(
       name: String,
@@ -122,20 +123,20 @@ abstract class LogicalPlan
   }
 
   /**
-   * Refreshes (or invalidates) any metadata/data cached in the plan recursively.
+   * 以递归方式刷新（或使）计划中缓存的任何元数据/数据失效。
    */
   def refresh(): Unit = children.foreach(_.refresh())
 
   /**
-   * Returns the output ordering that this plan generates.
+   * 返回此计划生成的输出顺序。
    */
   def outputOrdering: Seq[SortOrder] = Nil
 
   /**
-   * Returns true iff `other`'s output is semantically the same, ie.:
-   *  - it contains the same number of `Attribute`s;
-   *  - references are the same;
-   *  - the order is equal too.
+   * 如果`other`'s 在输出语义上是相同，则返回True, ie.:
+   *  - 包含相同数量的`Attribute`s;
+   *  - 相同引用;
+   *  - 序列也是相等的.
    */
   def sameOutput(other: LogicalPlan): Boolean = {
     val thisOutput = this.output
@@ -147,18 +148,18 @@ abstract class LogicalPlan
 }
 
 /**
- * A logical plan node with no children.
+ * 没有子节点的逻辑计划节点。
  */
 abstract class LeafNode extends LogicalPlan {
   override final def children: Seq[LogicalPlan] = Nil
   override def producedAttributes: AttributeSet = outputSet
 
-  /** Leaf nodes that can survive analysis must define their own statistics. */
+  /** 能够在分析中生存的叶节点必须定义自己的统计信息。*/
   def computeStats(): Statistics = throw new UnsupportedOperationException
 }
 
 /**
- * A logical plan node with single child.
+ * 具有单个子节点的逻辑计划节点。
  */
 abstract class UnaryNode extends LogicalPlan {
   def child: LogicalPlan
@@ -166,8 +167,7 @@ abstract class UnaryNode extends LogicalPlan {
   override final def children: Seq[LogicalPlan] = child :: Nil
 
   /**
-   * Generates all valid constraints including an set of aliased constraints by replacing the
-   * original constraint expressions with the corresponding alias
+   * 通过将原始约束表达式替换为相应的别名，生成包括一组别名约束在内的所有有效约束
    */
   protected def getAllValidConstraints(projectList: Seq[NamedExpression]): Set[Expression] = {
     var allConstraints = child.constraints.asInstanceOf[Set[Expression]]
@@ -191,7 +191,7 @@ abstract class UnaryNode extends LogicalPlan {
 }
 
 /**
- * A logical plan node with a left and right child.
+ * 具有左右子级的逻辑计划节点。
  */
 abstract class BinaryNode extends LogicalPlan {
   def left: LogicalPlan
