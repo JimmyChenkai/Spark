@@ -127,7 +127,8 @@ object ExternalCatalogUtils {
       new Path(totalPath, nextPartPath)
     }
   }
-
+  
+  //生成路径分区
   def getPartitionPathString(col: String, value: String): String = {
     val partitionString = if (value == null || value.isEmpty) {
       DEFAULT_PARTITION_NAME
@@ -137,6 +138,7 @@ object ExternalCatalogUtils {
     escapePathName(col) + "=" + partitionString
   }
 
+  //通过指定规则做谓词分解
   def prunePartitionsByFilter(
       catalogTable: CatalogTable,
       inputPartitions: Seq[CatalogTablePartition],
@@ -170,8 +172,8 @@ object ExternalCatalogUtils {
   }
 
   /**
-   * Returns true if `spec1` is a partial partition spec w.r.t. `spec2`, e.g. PARTITION (a=1) is a
-   * partial partition spec w.r.t. PARTITION (a=1,b=2).
+   * 如果“spec1”是部分分区spec w.r.t.`spec2`，例如，分区（a=1）是
+   * 部分分区规格W.R.T.分区（A=1，B=2）。
    */
   def isPartialPartitionSpec(
       spec1: TablePartitionSpec,
@@ -184,8 +186,8 @@ object ExternalCatalogUtils {
 
 object CatalogUtils {
   /**
-   * Masking credentials in the option lists. For example, in the sql plan explain output
-   * for JDBC data sources.
+   *在选项列表中屏蔽凭据。例如，在SQL计划中解释输出
+   * 对于JDBC数据源。
    */
   def maskCredentials(options: Map[String, String]): Map[String, String] = {
     options.map {
