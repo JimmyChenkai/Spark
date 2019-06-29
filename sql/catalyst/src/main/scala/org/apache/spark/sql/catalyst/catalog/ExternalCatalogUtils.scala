@@ -28,21 +28,26 @@ import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.expressions.{And, AttributeReference, BoundReference, Expression, InterpretedPredicate}
 
+/**
+* 这个理解为ExternalCatalogUtils工具类
+**/
 object ExternalCatalogUtils {
-  // This duplicates default value of Hive `ConfVars.DEFAULTPARTITIONNAME`, since catalyst doesn't
-  // depend on Hive.
+  // 这复制了hive`confvars.defaultPartitionName`的默认值，因为catalyst没有
+  // 依赖HIVE
   val DEFAULT_PARTITION_NAME = "__HIVE_DEFAULT_PARTITION__"
 
   //////////////////////////////////////////////////////////////////////////////////////////////////
-  // The following string escaping code is mainly copied from Hive (o.a.h.h.common.FileUtils).
+  // 以下字符串转义代码主要从hive（o.a.h.h.common.fileutils）复制。
   //////////////////////////////////////////////////////////////////////////////////////////////////
 
+  //字符转义类
+  //这里列举指定的字符集合clist
   val charToEscape = {
     val bitSet = new java.util.BitSet(128)
 
     /**
-     * ASCII 01-1F are HTTP control characters that need to be escaped.
-     * \u000A and \u000D are \n and \r, respectively.
+     * ascii 01-1f是需要转义的HTTP控制字符
+     * \u000A and \u000D are \n and \r
      */
     val clist = Array(
       '\u0001', '\u0002', '\u0003', '\u0004', '\u0005', '\u0006', '\u0007', '\u0008', '\u0009',
@@ -60,10 +65,12 @@ object ExternalCatalogUtils {
     bitSet
   }
 
+  //判断是否需要转义
   def needsEscaping(c: Char): Boolean = {
     c >= 0 && c < charToEscape.size() && charToEscape.get(c)
   }
 
+ //需要转义的路径名称
   def escapePathName(path: String): String = {
     val builder = new StringBuilder()
     path.foreach { c =>
@@ -78,7 +85,7 @@ object ExternalCatalogUtils {
     builder.toString()
   }
 
-
+  //不需要转义路劲名称
   def unescapePathName(path: String): String = {
     val sb = new StringBuilder
     var i = 0
@@ -107,6 +114,7 @@ object ExternalCatalogUtils {
     sb.toString()
   }
 
+  //生成分区路径
   def generatePartitionPath(
       spec: TablePartitionSpec,
       partitionColumnNames: Seq[String],
@@ -213,24 +221,23 @@ object CatalogUtils {
   }
 
   /**
-   * Convert URI to String.
-   * Since URI.toString does not decode the uri, e.g. change '%25' to '%'.
-   * Here we create a hadoop Path with the given URI, and rely on Path.toString
-   * to decode the uri
-   * @param uri the URI of the path
-   * @return the String of the path
+   * URI转换为字符串。
+   * 由于uri.toString不解码该uri，例如将“%25”更改为“%”。
+   * 在这里，我们用给定的URI创建一个hadoop路径，并依赖path.toString解码URI
+   * @param uri 
+   * @return path
    */
   def URIToString(uri: URI): String = {
     new Path(uri).toString
   }
 
   /**
-   * Convert String to URI.
-   * Since new URI(string) does not encode string, e.g. change '%' to '%25'.
-   * Here we create a hadoop Path with the given String, and rely on Path.toUri
-   * to encode the string
-   * @param str the String of the path
-   * @return the URI of the path
+   * 将字符串转换为URI。
+   * 因为new uri（string）不编码字符串，例如将“%”更改为“%25”。
+   * 在这里，我们用给定的字符串创建一个hadoop路径，并依赖path.touri
+   * 对字符串进行编码
+   * @param str path
+   * @return the URI 
    */
   def stringToURI(str: String): URI = {
     new Path(str).toUri
