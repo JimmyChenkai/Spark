@@ -30,6 +30,7 @@ import org.apache.spark.sql.catalyst.expressions.{And, AttributeReference, Bound
 
 /**
 * 这个理解为ExternalCatalogUtils工具类
+* 核心作用是做字符转义的一系列通用方法
 **/
 object ExternalCatalogUtils {
   // 这复制了hive`confvars.defaultPartitionName`的默认值，因为catalyst没有
