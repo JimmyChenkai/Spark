@@ -166,30 +166,33 @@ class SessionCatalog(
   }
 
   /**
-   * This method is used to make the given path qualified before we
-   * store this path in the underlying external catalog. So, when a path
-   * does not contain a scheme, this path will not be changed after the default
-   * FileSystem is changed.
+   * 此方法用于在将此路径存储到基础外部目录之前使给定路径合格。
+   * 因此，当路径不包含方案时，在更改默认文件系统之后，不会更改此路径。
+   * 
    */
   private def makeQualifiedPath(path: URI): URI = {
     val hadoopPath = new Path(path)
     val fs = hadoopPath.getFileSystem(hadoopConf)
     fs.makeQualified(hadoopPath).toUri
   }
-
+  //判断数据库是否存在，如果不存在就抛出NoSuchDatabaseException异常
   private def requireDbExists(db: String): Unit = {
     if (!databaseExists(db)) {
       throw new NoSuchDatabaseException(db)
     }
   }
-
+  //判断表是否存在，如果不存在，就抛出NoSuchTableException异常
   private def requireTableExists(name: TableIdentifier): Unit = {
     if (!tableExists(name)) {
       val db = name.database.getOrElse(currentDb)
       throw new NoSuchTableException(db = db, table = name.table)
     }
   }
-
+  //判断表是否不存在，如果存在，就抛出TableAlreadyExistsException异常 
+  //这个和上面刚好是相反操作
+  //我刚第一眼看到时候比较疑惑，为什么要这么做，上面和相面本质上是一个事情
+  //后来一看返回异常就知道，其实就做了两件事，抛出两个异常
+  //但是我还是会觉得这两个方法能合并的。来个分支即可。这点我记下~
   private def requireTableNotExists(name: TableIdentifier): Unit = {
     if (tableExists(name)) {
       val db = name.database.getOrElse(currentDb)
