@@ -34,13 +34,16 @@ import org.apache.spark.sql.catalyst.util.StringUtils
 import org.apache.spark.sql.types.StructType
 
 /**
- * An in-memory (ephemeral) implementation of the system catalog.
+ * system catalog 基于内存（短暂）实现类
+ * 同时这个类继承ExternalCatalog类
  *
- * This is a dummy implementation that does not require setting up external systems.
- * It is intended for testing or exploration purposes only and should not be used
- * in production.
- *
- * All public methods should be synchronized for thread-safety.
+ * 这是一个不需要设置外部系统的虚拟实现
+ * 它仅用于测试目的，不应用于生产。
+ * 为了线程安全，应该同步所有公共方法。
+ * 这个类非常简单，主要继承ExternalCatalog，对于数据库，表，分区，方法四个层面重写了方法，用于测试使用。
+ * 所以下面方法围绕ExternalCatalog类的方法展开阅读，还是比较简单的。
+ * 同时类创建时候就new好了sparlConf环境预处理方法
+ * 
  */
 class InMemoryCatalog(
     conf: SparkConf = new SparkConf,
