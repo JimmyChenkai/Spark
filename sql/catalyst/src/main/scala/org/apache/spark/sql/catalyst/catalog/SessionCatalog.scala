@@ -47,11 +47,14 @@ object SessionCatalog {
 }
 
 /**
- * An internal catalog that is used by a Spark Session. This internal catalog serves as a
- * proxy to the underlying metastore (e.g. Hive Metastore) and it also manages temporary
- * views and functions of the Spark Session that it belongs to.
+ * 类创建就会创建 ExternalCatalog，GlobalTempViewManager，FunctionRegistry，SQLConf
+ * Configuration，ParserInterface，FunctionResourceLoader
+ * Spark会话使用的internal Catalog
+ * 
+ * 这个内部目录充当底层元存储（例如hive元存储）的代理，
+ * 它还管理它所属的Spark会话的临时视图和函数。
  *
- * This class must be thread-safe.
+ * 这个类一定是线程安全的
  */
 class SessionCatalog(
     externalCatalogBuilder: () => ExternalCatalog,
@@ -64,7 +67,7 @@ class SessionCatalog(
   import SessionCatalog._
   import CatalogTypes.TablePartitionSpec
 
-  // For testing only.
+  // 测试用
   def this(
       externalCatalog: ExternalCatalog,
       functionRegistry: FunctionRegistry,
@@ -79,7 +82,7 @@ class SessionCatalog(
       DummyFunctionResourceLoader)
   }
 
-  // For testing only.
+  // 测试用
   def this(externalCatalog: ExternalCatalog) {
     this(
       externalCatalog,
@@ -87,28 +90,29 @@ class SessionCatalog(
       new SQLConf().copy(SQLConf.CASE_SENSITIVE -> true))
   }
 
+  //延迟初始化 externalCatalog和globalTempViewManager类
   lazy val externalCatalog = externalCatalogBuilder()
   lazy val globalTempViewManager = globalTempViewManagerBuilder()
 
-  /** List of temporary views, mapping from table name to their logical plan. */
+  /** 临时视图列表，从表名映射到其逻辑计划。 */
   @GuardedBy("this")
   protected val tempViews = new mutable.HashMap[String, LogicalPlan]
 
-  // Note: we track current database here because certain operations do not explicitly
-  // specify the database (e.g. DROP TABLE my_table). In these cases we must first
-  // check whether the temporary view or function exists, then, if not, operate on
-  // the corresponding item in the current database.
+  // 备注: 我们在这里跟踪当前数据库，因为某些操作没有指定
+  // 数据库（例如，删除表my_table）。在这种情况下，我们必须首先
+  // 检查临时视图或函数是否存在，如果不存在，则操作
+  // 当前数据库中对应的项。
   @GuardedBy("this")
   protected var currentDb: String = formatDatabaseName(DEFAULT_DATABASE)
 
   private val validNameFormat = "([\\w_]+)".r
 
   /**
-   * Checks if the given name conforms the Hive standard ("[a-zA-Z_0-9]+"),
-   * i.e. if this name only contains characters, numbers, and _.
+   * 检查给定的名称是否符合HIVE（“[a-za-z_0-9]+”），
+   * 也就是说，如果这个名称只包含字符、数字和u。
    *
-   * This method is intended to have the same behavior of
-   * org.apache.hadoop.hive.metastore.MetaStoreUtils.validateName.
+   * 此方法旨在过滤只满足指定条件
+   * org.apache.hadoop.hive.metastore.metastoreutils.validatename。
    */
   private def validateName(name: String): Unit = {
     if (!validNameFormat.pattern.matcher(name).matches()) {
@@ -118,14 +122,14 @@ class SessionCatalog(
   }
 
   /**
-   * Format table name, taking into account case sensitivity.
+   * 设置表名格式，考虑大小写敏感度。
    */
   protected[this] def formatTableName(name: String): String = {
     if (conf.caseSensitiveAnalysis) name else name.toLowerCase(Locale.ROOT)
   }
 
   /**
-   * Format database name, taking into account case sensitivity.
+   * 设置数据库名称格式，考虑大小写敏感度。
    */
   protected[this] def formatDatabaseName(name: String): String = {
     if (conf.caseSensitiveAnalysis) name else name.toLowerCase(Locale.ROOT)
@@ -136,27 +140,27 @@ class SessionCatalog(
     CacheBuilder.newBuilder().maximumSize(cacheSize).build[QualifiedTableName, LogicalPlan]()
   }
 
-  /** This method provides a way to get a cached plan. */
+  /** 此方法提供了一种获取缓存计划的方法。*/
   def getCachedPlan(t: QualifiedTableName, c: Callable[LogicalPlan]): LogicalPlan = {
     tableRelationCache.get(t, c)
   }
 
-  /** This method provides a way to get a cached plan if the key exists. */
+  /** 此方法提供了一种获取缓存计划（如果该键存在）的方法。 */
   def getCachedTable(key: QualifiedTableName): LogicalPlan = {
     tableRelationCache.getIfPresent(key)
   }
 
-  /** This method provides a way to cache a plan. */
+  /** 此方法提供了一种缓存计划的方法。 */
   def cacheTable(t: QualifiedTableName, l: LogicalPlan): Unit = {
     tableRelationCache.put(t, l)
   }
 
-  /** This method provides a way to invalidate a cached plan. */
+  /** 此方法提供了使缓存计划无效的方法。 */
   def invalidateCachedTable(key: QualifiedTableName): Unit = {
     tableRelationCache.invalidate(key)
   }
 
-  /** This method provides a way to invalidate all the cached plans. */
+  /** 此方法提供一种使所有缓存计划无效的方法。 */
   def invalidateAllCachedTables(): Unit = {
     tableRelationCache.invalidateAll()
   }
