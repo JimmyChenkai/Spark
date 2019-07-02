@@ -38,11 +38,11 @@ import org.apache.spark.sql.types._
 
 
 /**
- * A function defined in the catalog.
+ * 专门定义catalog方法函数的
  *
- * @param identifier name of the function
- * @param className fully qualified class name, e.g. "org.apache.spark.util.MyFunc"
- * @param resources resource types and Uris used by the function
+ * @param identifier 方法名称
+ * @param className 类全名称, 例如. "org.apache.spark.util.MyFunc"
+ * @param resources 方法是有资源类型集合
  */
 case class CatalogFunction(
     identifier: FunctionIdentifier,
@@ -51,7 +51,7 @@ case class CatalogFunction(
 
 
 /**
- * Storage format, used to describe how a partition or a table is stored.
+ * 存储格式化，用来描述一个分区一个表示如何存储的
  */
 case class CatalogStorageFormat(
     locationUri: Option[URI],
@@ -60,13 +60,14 @@ case class CatalogStorageFormat(
     serde: Option[String],
     compressed: Boolean,
     properties: Map[String, String]) {
-
+  //转为string类型
   override def toString: String = {
     toLinkedHashMap.map { case ((key, value)) =>
       if (value.isEmpty) key else s"$key: $value"
     }.mkString("Storage(", ", ", ")")
   }
 
+  //转为LinkedHashMap
   def toLinkedHashMap: mutable.LinkedHashMap[String, String] = {
     val map = new mutable.LinkedHashMap[String, String]()
     locationUri.foreach(l => map.put("Location", l.toString))
@@ -84,20 +85,20 @@ case class CatalogStorageFormat(
 }
 
 object CatalogStorageFormat {
-  /** Empty storage format for default values and copies. */
+  /** 默认值和副本空存储格式*/
   val empty = CatalogStorageFormat(locationUri = None, inputFormat = None,
     outputFormat = None, serde = None, compressed = false, properties = Map.empty)
 }
 
 /**
- * A partition (Hive style) defined in the catalog.
+ * Hive类型的分区在catalog中的定义
  *
- * @param spec partition spec values indexed by column name
- * @param storage storage format of the partition
- * @param parameters some parameters for the partition
- * @param createTime creation time of the partition, in milliseconds
- * @param lastAccessTime last access time, in milliseconds
- * @param stats optional statistics (number of rows, total size, etc.)
+ * @param spec 按列名索引的分区规范值
+ * @param storage 分区存储格式化
+ * @param parameters 分区一些参数
+ * @param createTime 创建分区时间 精确到毫秒
+ * @param lastAccessTime 最近一次使用时间 精确到毫秒
+ * @param stats 统计信息 (多少行，总量是多大等)
  */
 case class CatalogTablePartition(
     spec: CatalogTypes.TablePartitionSpec,
@@ -130,21 +131,21 @@ case class CatalogTablePartition(
     }.mkString("CatalogPartition(\n\t", "\n\t", ")")
   }
 
-  /** Readable string representation for the CatalogTablePartition. */
+  /** 目录表分区的可读字符串表示形式。*/
   def simpleString: String = {
     toLinkedHashMap.map { case ((key, value)) =>
       if (value.isEmpty) key else s"$key: $value"
     }.mkString("", "\n", "")
   }
 
-  /** Return the partition location, assuming it is specified. */
+  /** 返回分区位置（假定已指定）。 */
   def location: URI = storage.locationUri.getOrElse {
     val specString = spec.map { case (k, v) => s"$k=$v" }.mkString(", ")
     throw new AnalysisException(s"Partition [$specString] did not specify locationUri")
   }
 
   /**
-   * Given the partition schema, returns a row with that schema holding the partition values.
+   * 根据分区结构，返回一行用来描述表示分区每个信息的
    */
   def toRow(partitionSchema: StructType, defaultTimeZondId: String): InternalRow = {
     val caseInsensitiveProperties = CaseInsensitiveMap(storage.properties)
@@ -163,26 +164,28 @@ case class CatalogTablePartition(
 
 
 /**
- * A container for bucketing information.
- * Bucketing is a technology for decomposing data sets into more manageable parts, and the number
- * of buckets is fixed so it does not fluctuate with data.
+ * 用来表示分桶信息的 类
+ * 分桶是把可分解的数据集合拆分为方便操作管理的小子集, 
+ * 桶的数量是固定的，所以不会随数据波动
  *
- * @param numBuckets number of buckets.
- * @param bucketColumnNames the names of the columns that used to generate the bucket id.
- * @param sortColumnNames the names of the columns that used to sort data in each bucket.
+ * @param numBuckets 分桶数量
+ * @param bucketColumnNames 用来生成桶ID的列名
+ * @param sortColumnNames 用来在每个桶内对数据排序的列
  */
 case class BucketSpec(
     numBuckets: Int,
     bucketColumnNames: Seq[String],
     sortColumnNames: Seq[String]) {
+    //定义sqlconf
   def conf: SQLConf = SQLConf.get
-
+  //如果分桶数量小于0，或者大于配置文件里面指定的最大分桶个数
+  //则抛出异常
   if (numBuckets <= 0 || numBuckets > conf.bucketingMaxBuckets) {
     throw new AnalysisException(
       s"Number of buckets should be greater than 0 but less than or equal to " +
         s"bucketing.maxBuckets (`${conf.bucketingMaxBuckets}`). Got `$numBuckets`")
   }
-
+  //重写toSting方法
   override def toString: String = {
     val bucketString = s"bucket columns: [${bucketColumnNames.mkString(", ")}]"
     val sortString = if (sortColumnNames.nonEmpty) {
@@ -192,7 +195,7 @@ case class BucketSpec(
     }
     s"$numBuckets buckets, $bucketString$sortString"
   }
-
+  //转为LinkedHashMap
   def toLinkedHashMap: mutable.LinkedHashMap[String, String] = {
     mutable.LinkedHashMap[String, String](
       "Num Buckets" -> numBuckets.toString,
@@ -203,28 +206,19 @@ case class BucketSpec(
 }
 
 /**
- * A table defined in the catalog.
+ * catalog中表的定义类
  *
- * Note that Hive's metastore also tracks skewed columns. We should consider adding that in the
- * future once we have a better understanding of how we want to handle skewed columns.
+ * 注意，hive的元存储还跟踪倾斜列。 
+ * 我们应该考虑在将来，一旦我们对如何处理倾斜列有了更好的理解。
  *
- * @param provider the name of the data source provider for this table, e.g. parquet, json, etc.
- *                 Can be None if this table is a View, should be "hive" for hive serde tables.
- * @param unsupportedFeatures is a list of string descriptions of features that are used by the
- *        underlying table but not supported by Spark SQL yet.
- * @param tracksPartitionsInCatalog whether this table's partition metadata is stored in the
- *                                  catalog. If false, it is inferred automatically based on file
- *                                  structure.
- * @param schemaPreservesCase Whether or not the schema resolved for this table is case-sensitive.
- *                           When using a Hive Metastore, this flag is set to false if a case-
- *                           sensitive schema was unable to be read from the table properties.
- *                           Used to trigger case-sensitive schema inference at query time, when
- *                           configured.
- * @param ignoredProperties is a list of table properties that are used by the underlying table
- *                          but ignored by Spark SQL yet.
- * @param createVersion records the version of Spark that created this table metadata. The default
- *                      is an empty string. We expect it will be read from the catalog or filled by
- *                      ExternalCatalog.createTable. For temporary views, the value will be empty.
+ * @param provider 表存储类型, liru . parquet, json等， 如果是视图就为None,               
+ * @param unsupportedFeatures 一个string类型集合，主要是用来描述底层表特征的信息的，sparksql 暂且不支持
+ * @param tracksPartitionsInCatalog 表分区信息是否存在catalog中，如果没有需要自动根据文件结构来推断
+ * @param schemaPreservesCase 是否表结构是大小写敏感的，当使用hive元数据时候置位false，
+ *                            如果无法判断是否大小写敏感，会在查询时候去推断，前提是配置过了
+ * @param ignoredProperties 是基础表使用的表属性列表Spark SQL忽略
+ * @param createVersion 当创建表元数据时候，记录spark版本. 默认是空字符串
+ *                      我们期望这个值来自catalog或者调用ExternalCatalog.createTable。 对于视图来说，这个值是空值
  */
 case class CatalogTable(
     identifier: TableIdentifier,
@@ -251,7 +245,7 @@ case class CatalogTable(
   import CatalogTable._
 
   /**
-   * schema of this table's partition columns
+   * 表分区列结构
    */
   def partitionSchema: StructType = {
     val partitionFields = schema.takeRight(partitionColumnNames.length)
@@ -261,36 +255,35 @@ case class CatalogTable(
   }
 
   /**
-   * schema of this table's data columns
+   * 表数据列结构
    */
   def dataSchema: StructType = {
     val dataFields = schema.dropRight(partitionColumnNames.length)
     StructType(dataFields)
   }
 
-  /** Return the database this table was specified to belong to, assuming it exists. */
+  /** 返回指定此表所属的数据库（假定它存在）。 */
   def database: String = identifier.database.getOrElse {
     throw new AnalysisException(s"table $identifier did not specify database")
   }
 
-  /** Return the table location, assuming it is specified. */
+  /** 返回表位置（假定已指定）。*/
   def location: URI = storage.locationUri.getOrElse {
     throw new AnalysisException(s"table $identifier did not specify locationUri")
   }
 
-  /** Return the fully qualified name of this table, assuming the database was specified. */
+  /** 如果指定了数据库，则返回此表的完全限定名。 */
   def qualifiedName: String = identifier.unquotedString
 
   /**
-   * Return the default database name we use to resolve a view, should be None if the CatalogTable
-   * is not a View or created by older versions of Spark(before 2.2.0).
+   * 返回用于解析视图的默认数据库名称, 
+   * 如果编目表不是视图或由旧版本的Spark（2.2.0之前）创建，则应为“None”。
    */
   def viewDefaultDatabase: Option[String] = properties.get(VIEW_DEFAULT_DATABASE)
 
   /**
-   * Return the output column names of the query that creates a view, the column names are used to
-   * resolve a view, should be empty if the CatalogTable is not a View or created by older versions
-   * of Spark(before 2.2.0).
+   * 返回用于查询视图的默认数据库名称, the column names are used to
+   * 如果编目表不是视图或由旧版本的Spark（2.2.0之前）创建，则应为“None”。
    */
   def viewQueryColumnNames: Seq[String] = {
     for {
@@ -303,7 +296,7 @@ case class CatalogTable(
     )
   }
 
-  /** Syntactic sugar to update a field in `storage`. */
+  /** 语法糖更新“存储”中的字段。 */
   def withNewStorage(
       locationUri: Option[URI] = storage.locationUri,
       inputFormat: Option[String] = storage.inputFormat,
@@ -315,7 +308,7 @@ case class CatalogTable(
       locationUri, inputFormat, outputFormat, serde, compressed, properties))
   }
 
-
+  //转为LinkedHashMap
   def toLinkedHashMap: mutable.LinkedHashMap[String, String] = {
     val map = new mutable.LinkedHashMap[String, String]()
     val tableProperties = properties.map(p => p._1 + "=" + p._2).mkString("[", ", ", "]")
@@ -349,14 +342,14 @@ case class CatalogTable(
 
     map
   }
-
+ //重写toString方法
   override def toString: String = {
     toLinkedHashMap.map { case ((key, value)) =>
       if (value.isEmpty) key else s"$key: $value"
     }.mkString("CatalogTable(\n", "\n", ")")
   }
 
-  /** Readable string representation for the CatalogTable. */
+  /** 目录表的可读字符串表示形式。 */
   def simpleString: String = {
     toLinkedHashMap.map { case ((key, value)) =>
       if (value.isEmpty) key else s"$key: $value"
@@ -372,9 +365,8 @@ object CatalogTable {
 }
 
 /**
- * This class of statistics is used in [[CatalogTable]] to interact with metastore.
- * We define this new class instead of directly using [[Statistics]] here because there are no
- * concepts of attributes in catalog.
+ * 这类统计信息在[[CatalogTable]]中用于与元存储交互。
+ * 我们在这里定义这个新类而不是直接使用[[Statistics]]，因为目录中没有属性的概念。
  */
 case class CatalogStatistics(
     sizeInBytes: BigInt,
@@ -382,24 +374,23 @@ case class CatalogStatistics(
     colStats: Map[String, CatalogColumnStat] = Map.empty) {
 
   /**
-   * Convert [[CatalogStatistics]] to [[Statistics]], and match column stats to attributes based
-   * on column names.
+   * 把[[CatalogStatistics]] 转为 [[Statistics]], 并将列状态与基于属性的列名称。
    */
   def toPlanStats(planOutput: Seq[Attribute], cboEnabled: Boolean): Statistics = {
     if (cboEnabled && rowCount.isDefined) {
       val attrStats = AttributeMap(planOutput
         .flatMap(a => colStats.get(a.name).map(a -> _.toPlanStat(a.name, a.dataType))))
-      // Estimate size as number of rows * row size.
+      // 将大小估计为行数*行大小。
       val size = EstimationUtils.getOutputSize(planOutput, rowCount.get, attrStats)
       Statistics(sizeInBytes = size, rowCount = rowCount, attributeStats = attrStats)
     } else {
-      // When CBO is disabled or the table doesn't have other statistics, we apply the size-only
-      // estimation strategy and only propagate sizeInBytes in statistics.
+     //当禁用cbo或表没有其他统计信息时，我们只应用大小
+     //估计策略，只在统计信息中传播sizeInBytes。
       Statistics(sizeInBytes = sizeInBytes)
     }
   }
 
-  /** Readable string representation for the CatalogStatistics. */
+  /** CatalogStatistics的可读字符串表示。*/
   def simpleString: String = {
     val rowCountString = if (rowCount.isDefined) s", ${rowCount.get} rows" else ""
     s"$sizeInBytes bytes$rowCountString"
@@ -407,7 +398,7 @@ case class CatalogStatistics(
 }
 
 /**
- * This class of statistics for a column is used in [[CatalogTable]] to interact with metastore.
+ * 在[[CatalogTable]]中，列的此类统计信息用于与元存储交互。
  */
 case class CatalogColumnStat(
     distinctCount: Option[BigInt] = None,
@@ -420,14 +411,14 @@ case class CatalogColumnStat(
     version: Int = CatalogColumnStat.VERSION) {
 
   /**
-   * Returns a map from string to string that can be used to serialize the column stats.
-   * The key is the name of the column and name of the field (e.g. "colName.distinctCount"),
-   * and the value is the string representation for the value.
-   * min/max values are stored as Strings. They can be deserialized using
-   * [[CatalogColumnStat.fromExternalString]].
+   * 返回可用于序列化列状态的从字符串到字符串的映射。
+   * 键是列的名称和字段的名称（例如“colname.distinctcount”），
+   * 值是值的字符串表示形式。
+   * 最小/最大值存储为字符串。它们可以使用反序列化
+   * [[CatalogColumnStat.FromExternalString]]。
    *
-   * As part of the protocol, the returned map always contains a key called "version".
-   * Any of the fields that are null (None) won't appear in the map.
+   * 作为协议的一部分，返回的映射始终包含一个名为“version”的键。
+   * 任何为空（无）的字段都不会出现在映射中。
    */
   def toMap(colName: String): Map[String, String] = {
     val map = new scala.collection.mutable.HashMap[String, String]
@@ -448,7 +439,7 @@ case class CatalogColumnStat(
     map.toMap
   }
 
-  /** Convert [[CatalogColumnStat]] to [[ColumnStat]]. */
+  /** 把 [[CatalogColumnStat]] 转为 [[ColumnStat]]. */
   def toPlanStat(
       colName: String,
       dataType: DataType): ColumnStat =
@@ -465,7 +456,7 @@ case class CatalogColumnStat(
 
 object CatalogColumnStat extends Logging {
 
-  // List of string keys used to serialize CatalogColumnStat
+  // 用于序列化CatalogColumnStat的字符串键列表
   val KEY_VERSION = "version"
   private val KEY_DISTINCT_COUNT = "distinctCount"
   private val KEY_MIN_VALUE = "min"
@@ -482,7 +473,7 @@ object CatalogColumnStat extends Logging {
   }
 
   /**
-   * Converts from string representation of data type to the corresponding Catalyst data type.
+   * 从数据类型的字符串表示形式转换为相应的Catalyst数据类型。
    */
   def fromExternalString(s: String, name: String, dataType: DataType, version: Int): Any = {
     dataType match {
@@ -499,7 +490,7 @@ object CatalogColumnStat extends Logging {
       case FloatType => s.toFloat
       case DoubleType => s.toDouble
       case _: DecimalType => Decimal(s)
-      // This version of Spark does not use min/max for binary/string types so we ignore it.
+      // 此版本的spark不使用min/max作为二进制/字符串类型，因此我们忽略它。
       case BinaryType | StringType => null
       case _ =>
         throw new AnalysisException("Column statistics deserialization is not supported for " +
@@ -508,8 +499,8 @@ object CatalogColumnStat extends Logging {
   }
 
   /**
-   * Converts the given value from Catalyst data type to string representation of external
-   * data type.
+   * 
+   * 将给定值从Catalyst数据类型转换为外部数据类型的字符串表示形式。
    */
   def toExternalString(v: Any, colName: String, dataType: DataType): String = {
     val externalValue = dataType match {
@@ -517,7 +508,7 @@ object CatalogColumnStat extends Logging {
       case TimestampType => getTimestampFormatter().format(v.asInstanceOf[Long])
       case BooleanType | _: IntegralType | FloatType | DoubleType => v
       case _: DecimalType => v.asInstanceOf[Decimal].toJavaBigDecimal
-      // This version of Spark does not use min/max for binary/string types so we ignore it.
+      // 此版本的spark不使用min/max作为二进制/字符串类型，因此我们忽略它。
       case _ =>
         throw new AnalysisException("Column statistics serialization is not supported for " +
           s"column $colName of data type: $dataType.")
@@ -527,9 +518,9 @@ object CatalogColumnStat extends Logging {
 
 
   /**
-   * Creates a [[CatalogColumnStat]] object from the given map.
-   * This is used to deserialize column stats from some external storage.
-   * The serialization side is defined in [[CatalogColumnStat.toMap]].
+   * 创建一个 [[CatalogColumnStat]]根据传入的map
+   * 这用于从一些外部存储中反序列化列状态。
+   * 序列化端在中定义 [[CatalogColumnStat.toMap]].
    */
   def fromMap(
     table: String,
@@ -565,7 +556,7 @@ object CatalogTableType {
 
 
 /**
- * A database defined in the catalog.
+ * catalog中一个数据定义
  */
 case class CatalogDatabase(
     name: String,
@@ -576,19 +567,18 @@ case class CatalogDatabase(
 
 object CatalogTypes {
   /**
-   * Specifications of a table partition. Mapping column name to column value.
+   * 表分区的规范。将列名映射到列值。
    */
   type TablePartitionSpec = Map[String, String]
 
   /**
-   * Initialize an empty spec.
+   * 初始化空规范。
    */
   lazy val emptyTablePartitionSpec: TablePartitionSpec = Map.empty[String, String]
 }
 
 /**
- * A placeholder for a table relation, which will be replaced by concrete relation like
- * `LogicalRelation` or `HiveTableRelation`, during analysis.
+ * 表关系的占位符，在分析期间将被“logicalrelation”或“hivetablerelation”等具体关系替换。
  */
 case class UnresolvedCatalogRelation(tableMeta: CatalogTable) extends LeafNode {
   assert(tableMeta.identifier.database.isDefined)
@@ -597,9 +587,9 @@ case class UnresolvedCatalogRelation(tableMeta: CatalogTable) extends LeafNode {
 }
 
 /**
- * A `LogicalPlan` that represents a hive table.
+ * 表示配置单元表的“logicalplan”。
  *
- * TODO: remove this after we completely make hive as a data source.
+ * TODO: 在我们完全将hive作为数据源后删除此项。
  */
 case class HiveTableRelation(
     tableMeta: CatalogTable,
@@ -609,7 +599,7 @@ case class HiveTableRelation(
   assert(tableMeta.partitionSchema.sameType(partitionCols.toStructType))
   assert(tableMeta.dataSchema.sameType(dataCols.toStructType))
 
-  // The partition column should always appear after data columns.
+  // 分区列应始终出现在数据列之后。
   override def output: Seq[AttributeReference] = dataCols ++ partitionCols
 
   def isPartitioned: Boolean = partitionCols.nonEmpty
