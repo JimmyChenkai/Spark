@@ -19,90 +19,90 @@ package org.apache.spark.sql.catalyst.catalog
 import org.apache.spark.scheduler.SparkListenerEvent
 
 /**
- * Event emitted by the external catalog when it is modified. Events are either fired before or
- * after the modification (the event should document this).
+ * Ecvent事件一定是external catalog在有变动或者修改时候发生创建的。
+ * 同时Event在变动前或者变动后任何一种情况下被释放（event应该记录下来）
  */
 trait ExternalCatalogEvent extends SparkListenerEvent
 
 /**
- * Listener interface for external catalog modification events.
+ * externalCatalog修改事件监听接口
  */
 trait ExternalCatalogEventListener {
   def onEvent(event: ExternalCatalogEvent): Unit
 }
 
 /**
- * Event fired when a database is create or dropped.
+ * 当数据库 被创建或者删除时候  event被释放
  */
 trait DatabaseEvent extends ExternalCatalogEvent {
   /**
-   * Database of the object that was touched.
+   * 数据库
    */
   val database: String
 }
 
 /**
- * Event fired before a database is created.
+ * 数据库创建之前event被释放
  */
 case class CreateDatabasePreEvent(database: String) extends DatabaseEvent
 
 /**
- * Event fired after a database has been created.
+ * 数据库创建之后event被释放
  */
 case class CreateDatabaseEvent(database: String) extends DatabaseEvent
 
 /**
- * Event fired before a database is dropped.
+ * 数据库删除之前evnet被释放
  */
 case class DropDatabasePreEvent(database: String) extends DatabaseEvent
 
 /**
- * Event fired after a database has been dropped.
+ * 数据库成功删除之后evnet被释放
  */
 case class DropDatabaseEvent(database: String) extends DatabaseEvent
 
 /**
- * Event fired before a database is altered.
+ * 数据库修改之前evnet被释放
  */
 case class AlterDatabasePreEvent(database: String) extends DatabaseEvent
 
 /**
- * Event fired after a database is altered.
+ * 数据修改之后event被释放
  */
 case class AlterDatabaseEvent(database: String) extends DatabaseEvent
 
 /**
- * Event fired when a table is created, dropped or renamed.
+ * 当一张表被创建，删除，重命名时候evnet被释放
  */
 trait TableEvent extends DatabaseEvent {
   /**
-   * Name of the table that was touched.
+   * 数据表名称
    */
   val name: String
 }
 
 /**
- * Event fired before a table is created.
+ * 数据表被创建之前event时间被释放
  */
 case class CreateTablePreEvent(database: String, name: String) extends TableEvent
 
 /**
- * Event fired after a table has been created.
+ * 数据表被创建之后event时间被释放
  */
 case class CreateTableEvent(database: String, name: String) extends TableEvent
 
 /**
- * Event fired before a table is dropped.
+ * 数据表被删除之前event时间被释放
  */
 case class DropTablePreEvent(database: String, name: String) extends TableEvent
 
 /**
- * Event fired after a table has been dropped.
+ * 数据表被删除之后event时间被释放
  */
 case class DropTableEvent(database: String, name: String) extends TableEvent
 
 /**
- * Event fired before a table is renamed.
+ * 数据表被重命名之前event时间被释放
  */
 case class RenameTablePreEvent(
     database: String,
@@ -111,7 +111,7 @@ case class RenameTablePreEvent(
   extends TableEvent
 
 /**
- * Event fired after a table has been renamed.
+ * 数据表被重命名之后event事件被释放
  */
 case class RenameTableEvent(
     database: String,
@@ -120,8 +120,8 @@ case class RenameTableEvent(
   extends TableEvent
 
 /**
- * String to indicate which part of table is altered. If a plain alterTable API is called, then
- * type will generally be Table.
+ * 用于表明表的那一部分被修改. 
+ * 如果调用普通的altertable API，则类型通常为table。
  */
 object AlterTableKind extends Enumeration {
   val TABLE = "table"
@@ -130,7 +130,7 @@ object AlterTableKind extends Enumeration {
 }
 
 /**
- * Event fired before a table is altered.
+ * 表被修改前event事件被释放
  */
 case class AlterTablePreEvent(
     database: String,
@@ -138,7 +138,7 @@ case class AlterTablePreEvent(
     kind: String) extends TableEvent
 
 /**
- * Event fired after a table is altered.
+ * 表被修改后event事件被释放
  */
 case class AlterTableEvent(
     database: String,
@@ -146,47 +146,47 @@ case class AlterTableEvent(
     kind: String) extends TableEvent
 
 /**
- * Event fired when a function is created, dropped, altered or renamed.
+ * 方法被创建，删除，修改时候event事件被释放
  */
 trait FunctionEvent extends DatabaseEvent {
   /**
-   * Name of the function that was touched.
+   * 方法
    */
   val name: String
 }
 
 /**
- * Event fired before a function is created.
+ * 方法被创建前event事件被释放
  */
 case class CreateFunctionPreEvent(database: String, name: String) extends FunctionEvent
 
 /**
- * Event fired after a function has been created.
+ * 方法被创建后event事件被释放
  */
 case class CreateFunctionEvent(database: String, name: String) extends FunctionEvent
 
 /**
- * Event fired before a function is dropped.
+ * 方法被删除前event事件被释放
  */
 case class DropFunctionPreEvent(database: String, name: String) extends FunctionEvent
 
 /**
- * Event fired after a function has been dropped.
+ * 方法被删除后event事件被释放
  */
 case class DropFunctionEvent(database: String, name: String) extends FunctionEvent
 
 /**
- * Event fired before a function is altered.
+ * 方法被修改前event事件被释放
  */
 case class AlterFunctionPreEvent(database: String, name: String) extends FunctionEvent
 
 /**
- * Event fired after a function has been altered.
+ * 方法被修改后event事件被释放
  */
 case class AlterFunctionEvent(database: String, name: String) extends FunctionEvent
 
 /**
- * Event fired before a function is renamed.
+ * 方法被重命名前event事件被释放
  */
 case class RenameFunctionPreEvent(
     database: String,
@@ -195,7 +195,7 @@ case class RenameFunctionPreEvent(
   extends FunctionEvent
 
 /**
- * Event fired after a function has been renamed.
+ * 方法被重命名后event事件被释放
  */
 case class RenameFunctionEvent(
     database: String,
