@@ -29,39 +29,39 @@ case class QueryExecutionMetering() {
   private val numEffectiveRunsMap = AtomicLongMap.create[String]()
   private val timeEffectiveRunsMap = AtomicLongMap.create[String]()
 
-  /** Resets statistics about time spent running specific rules */
+  /** 重置有关运行特定规则所花费时间的统计信息 */
   def resetMetrics(): Unit = {
     timeMap.clear()
     numRunsMap.clear()
     numEffectiveRunsMap.clear()
     timeEffectiveRunsMap.clear()
   }
-
+  //总耗时
   def totalTime: Long = {
     timeMap.sum()
   }
-
+  //运行行数耗时
   def totalNumRuns: Long = {
     numRunsMap.sum()
   }
-
+  //执行耗时
   def incExecutionTimeBy(ruleName: String, delta: Long): Unit = {
     timeMap.addAndGet(ruleName, delta)
   }
-
+  //有效执行耗时
   def incTimeEffectiveExecutionBy(ruleName: String, delta: Long): Unit = {
     timeEffectiveRunsMap.addAndGet(ruleName, delta)
   }
-
+  //有效执行行数耗时
   def incNumEffectiveExecution(ruleName: String): Unit = {
     numEffectiveRunsMap.incrementAndGet(ruleName)
   }
-
+  //执行行数耗时
   def incNumExecution(ruleName: String): Unit = {
     numRunsMap.incrementAndGet(ruleName)
   }
 
-  /** Dump statistics about time spent running specific rules. */
+  /** 转储有关运行特定规则所花费时间的统计信息 */
   def dumpTimeSpent(): String = {
     val map = timeMap.asMap().asScala
     val maxLengthRuleNames = if (map.isEmpty) {
