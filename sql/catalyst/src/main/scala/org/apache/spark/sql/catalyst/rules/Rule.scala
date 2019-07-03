@@ -22,11 +22,11 @@ import org.apache.spark.sql.catalyst.trees.TreeNode
 
 abstract class Rule[TreeType <: TreeNode[_]] extends Logging {
 
-  /** Name for this rule, automatically inferred based on class name. */
+  /** 依据类的名字自动推断出RULE的名称 */
   val ruleName: String = {
     val className = getClass.getName
     if (className endsWith "$") className.dropRight(1) else className
   }
-
+  //是个借口类，子类实现需要重写此方法，实现处理逻辑
   def apply(plan: TreeType): TreeType
 }
