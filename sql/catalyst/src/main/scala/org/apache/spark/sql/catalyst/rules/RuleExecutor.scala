@@ -28,12 +28,12 @@ import org.apache.spark.util.Utils
 object RuleExecutor {
   protected val queryExecutionMeter = QueryExecutionMetering()
 
-  /** Dump statistics about time spent running specific rules. */
+  /** 转储有关运行特定规则所花费时间的统计信息 */
   def dumpTimeSpent(): String = {
     queryExecutionMeter.dumpTimeSpent()
   }
 
-  /** Resets statistics about time spent running specific rules */
+  /** 重置有关运行特定规则所花费时间的统计信息 */
   def resetMetrics(): Unit = {
     queryExecutionMeter.resetMetrics()
   }
@@ -42,34 +42,33 @@ object RuleExecutor {
 abstract class RuleExecutor[TreeType <: TreeNode[_]] extends Logging {
 
   /**
-   * An execution strategy for rules that indicates the maximum number of executions. If the
-   * execution reaches fix point (i.e. converge) before maxIterations, it will stop.
+   * 表示最大执行次数的规则的执行策略。
+   * 如果执行在最大化之前达到固定点（i.e. converge），它将停止。
    */
   abstract class Strategy { def maxIterations: Int }
 
-  /** A strategy that only runs once. */
+  /** 只执行一次执行策略 */
   case object Once extends Strategy { val maxIterations = 1 }
 
-  /** A strategy that runs until fix point or maxIterations times, whichever comes first. */
+  /** 固定的点或者最大值无论哪个先出现，就执行策略 */
   case class FixedPoint(maxIterations: Int) extends Strategy
 
-  /** A batch of rules. */
+  /** 批量rule */
   protected case class Batch(name: String, strategy: Strategy, rules: Rule[TreeType]*)
 
-  /** Defines a sequence of rule batches, to be overridden by the implementation. */
+  /** 批量rule集合, 可以被继承子类覆盖 */
   protected def batches: Seq[Batch]
 
   /**
-   * Defines a check function that checks for structural integrity of the plan after the execution
-   * of each rule. For example, we can check whether a plan is still resolved after each rule in
-   * `Optimizer`, so we can catch rules that return invalid plans. The check function returns
-   * `false` if the given plan doesn't pass the structural integrity check.
+   * 定义检查函数，该函数在执行每个规则后检查计划的结构完整性
+   * 例如, 我们可以在“优化器”中的每个规则之后检查计划是否仍然得到解析，
+   * 所以我们可以捕获返回无效计划的规则。
+   * 如果给定的计划未通过结构完整性检查，则检查函数返回“false”。
    */
   protected def isPlanIntegral(plan: TreeType): Boolean = true
 
   /**
-   * Executes the batches of rules defined by the subclass, and also tracks timing info for each
-   * rule using the provided tracker.
+   * 执行子类定义的批量rule，同时记录每个rule的运行时间信息
    * @see [[execute]]
    */
   def executeAndTrack(plan: TreeType, tracker: QueryPlanningTracker): TreeType = {
@@ -79,8 +78,8 @@ abstract class RuleExecutor[TreeType <: TreeNode[_]] extends Logging {
   }
 
   /**
-   * Executes the batches of rules defined by the subclass. The batches are executed serially
-   * using the defined execution strategy. Within each batch, rules are also executed serially.
+   * 执行子类定义的批量rule， 使用定义的执行策略来串行执行批量rule
+   * 每个单独rule内部也是串行执行
    */
   def execute(plan: TreeType): TreeType = {
     var curPlan = plan
@@ -88,7 +87,7 @@ abstract class RuleExecutor[TreeType <: TreeNode[_]] extends Logging {
     val planChangeLogger = new PlanChangeLogger()
     val tracker: Option[QueryPlanningTracker] = QueryPlanningTracker.get
 
-    // Run the structural integrity checker against the initial input
+    // 根据初始输入运行结构完整性检查器
     if (!isPlanIntegral(plan)) {
       val message = "The structural integrity of the input plan is broken in " +
         s"${this.getClass.getName.stripSuffix("$")}."
@@ -101,7 +100,7 @@ abstract class RuleExecutor[TreeType <: TreeNode[_]] extends Logging {
       var lastPlan = curPlan
       var continue = true
 
-      // Run until fix point (or the max number of iterations as specified in the strategy.
+      // 运行到固定点（或策略中指定的最大迭代次数）。
       while (continue) {
         curPlan = batch.rules.foldLeft(curPlan) {
           case (plan, rule) =>
@@ -118,10 +117,10 @@ abstract class RuleExecutor[TreeType <: TreeNode[_]] extends Logging {
             queryExecutionMetrics.incExecutionTimeBy(rule.ruleName, runTime)
             queryExecutionMetrics.incNumExecution(rule.ruleName)
 
-            // Record timing information using QueryPlanningTracker
+            // 使用 QueryPlanningTracker记录运行时间
             tracker.foreach(_.recordRuleInvocation(rule.ruleName, runTime, effective))
 
-            // Run the structural integrity checker against the plan after each rule.
+            // 根据每个规则后的计划运行结构完整性检查器。
             if (!isPlanIntegral(result)) {
               val message = s"After applying rule ${rule.ruleName} in batch ${batch.name}, " +
                 "the structural integrity of the plan is broken."
@@ -132,7 +131,7 @@ abstract class RuleExecutor[TreeType <: TreeNode[_]] extends Logging {
         }
         iteration += 1
         if (iteration > batch.strategy.maxIterations) {
-          // Only log if this is a rule that is supposed to run more than once.
+          // 当这一规则执行多次时候，会记录
           if (iteration != 2) {
             val message = s"Max iterations (${iteration - 1}) reached for batch ${batch.name}"
             if (Utils.isTesting) {
@@ -158,6 +157,7 @@ abstract class RuleExecutor[TreeType <: TreeNode[_]] extends Logging {
     curPlan
   }
 
+  //内部类  修改日志级别的
   private class PlanChangeLogger {
 
     private val logLevel = SQLConf.get.optimizerPlanChangeLogLevel
