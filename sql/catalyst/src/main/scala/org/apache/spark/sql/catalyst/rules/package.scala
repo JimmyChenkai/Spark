@@ -18,6 +18,6 @@
 package org.apache.spark.sql.catalyst
 
 /**
- * A framework for applying batches rewrite rules to trees, possibly to fixed point.
+ * 应用批处理的框架会将规则重写到树上，可能会重写到固定点上。
  */
 package object rules
