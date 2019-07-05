@@ -321,8 +321,8 @@ class Analyzer(
      *  represented as sequence of expressions.
      */
     def cubeExprs(exprs: Seq[Expression]): Seq[Seq[Expression]] = {
-      // `cubeExprs0` is recursive and returns a lazy Stream. Here we call `toIndexedSeq` to
-      // materialize it and avoid serialization problems later on.
+      // `cubeexprs0`是递归的，返回一个懒加载流。
+      // 这里我们调用“toindexedseq”来实现它，并避免以后出现序列化问题。
       cubeExprs0(exprs).toIndexedSeq
     }
 
@@ -367,7 +367,7 @@ class Analyzer(
     }
 
     /*
-     * Create new alias for all group by expressions for `Expand` operator.
+     * 为“expand”运算符的所有分组依据表达式创建新别名。
      */
     private def constructGroupByAlias(groupByExprs: Seq[Expression]): Seq[Alias] = {
       groupByExprs.map {
@@ -377,17 +377,17 @@ class Analyzer(
     }
 
     /*
-     * Construct [[Expand]] operator with grouping sets.
+     * 使 [[Expand]] 操作 分组集合
      */
     private def constructExpand(
         selectedGroupByExprs: Seq[Seq[Expression]],
         child: LogicalPlan,
         groupByAliases: Seq[Alias],
         gid: Attribute): LogicalPlan = {
-      // Change the nullability of group by aliases if necessary. For example, if we have
-      // GROUPING SETS ((a,b), a), we do not need to change the nullability of a, but we
-      // should change the nullabilty of b to be TRUE.
-      // TODO: For Cube/Rollup just set nullability to be `true`.
+      //根据需要更改按别名分组的可空性。例如，如果我们
+      //分组集（（a，b），a），我们不需要更改a的可空性，但是我们
+      //应将b的nullability更改为true
+      //TODO:对于多维数据集/汇总，只需将nullability设置为“true”。
       val expandedAttributes = groupByAliases.map { alias =>
         if (selectedGroupByExprs.exists(!_.contains(alias.child))) {
           alias.toAttribute.withNullability(true)
@@ -410,7 +410,7 @@ class Analyzer(
     }
 
     /*
-     * Construct new aggregate expressions by replacing grouping functions.
+     *通过替换分组函数构造新的聚合表达式。
      */
     private def constructAggregateExprs(
         groupByExprs: Seq[Expression],
@@ -418,23 +418,22 @@ class Analyzer(
         groupByAliases: Seq[Alias],
         groupingAttrs: Seq[Expression],
         gid: Attribute): Seq[NamedExpression] = aggregations.map {
-      // collect all the found AggregateExpression, so we can check an expression is part of
-      // any AggregateExpression or not.
+      //收集所有找到的AggregateExpression，这样我们可以检查表达式是否是
+      //是否有AggregateExpression。
       val aggsBuffer = ArrayBuffer[Expression]()
-      // Returns whether the expression belongs to any expressions in `aggsBuffer` or not.
+      //返回表达式是否属于“aggsbuffer”中的任何表达式。
       def isPartOfAggregation(e: Expression): Boolean = {
         aggsBuffer.exists(a => a.find(_ eq e).isDefined)
       }
       replaceGroupingFunc(_, groupByExprs, gid).transformDown {
-        // AggregateExpression should be computed on the unmodified value of its argument
-        // expressions, so we should not replace any references to grouping expression
-        // inside it.
+        //AggregateExpression应根据其参数的未修改值进行计算
+        //表达式，因此不应替换对分组表达式的任何引用在里面。
         case e: AggregateExpression =>
           aggsBuffer += e
           e
         case e if isPartOfAggregation(e) => e
         case e =>
-          // Replace expression by expand output attribute.
+          //用扩展输出属性替换表达式。
           val index = groupByAliases.indexWhere(_.child.semanticEquals(e))
           if (index == -1) {
             e
@@ -445,7 +444,7 @@ class Analyzer(
     }
 
     /*
-     * Construct [[Aggregate]] operator from Cube/Rollup/GroupingSets.
+     * 从多维数据集/汇总/分组集中构造[[Aggregate]]运算符。
      */
     private def constructAggregate(
         selectedGroupByExprs: Seq[Seq[Expression]],
@@ -454,14 +453,13 @@ class Analyzer(
         child: LogicalPlan): LogicalPlan = {
       val gid = AttributeReference(VirtualColumn.groupingIdName, IntegerType, false)()
 
-      // In case of ANSI-SQL compliant syntax for GROUPING SETS, groupByExprs is optional and
-      // can be null. In such case, we derive the groupByExprs from the user supplied values for
-      // grouping sets.
+      // 对于符合ANSI-SQL的分组集语法，groupbyexprs是可选的，可以为空。在这种情况下，
+      // 我们从用户为分组集提供的值派生groupByExpr。
       val finalGroupByExpressions = if (groupByExprs == Nil) {
         selectedGroupByExprs.flatten.foldLeft(Seq.empty[Expression]) { (result, currentExpr) =>
-          // Only unique expressions are included in the group by expressions and is determined
-          // based on their semantic equality. Example. grouping sets ((a * b), (b * a)) results
-          // in grouping expression (a * b)
+          //Group By表达式中只包含唯一表达式，并确定
+          //基于它们的语义相等性。例子。分组集（（a*b），（b*a））结果
+          //在分组表达式（A*B）中
           if (result.find(_.semanticEquals(currentExpr)).isDefined) {
             result
           } else {
@@ -472,10 +470,10 @@ class Analyzer(
         groupByExprs
       }
 
-      // Expand works by setting grouping expressions to null as determined by the
-      // `selectedGroupByExprs`. To prevent these null values from being used in an aggregate
-      // instead of the original value we need to create new aliases for all group by expressions
-      // that will only be used for the intended purpose.
+      //通过将分组表达式设置为空（由
+      //`选择edGroupByExprs`。防止在聚合中使用这些空值
+      //我们需要为所有group by表达式创建新的别名，而不是原始值
+      //仅用于预期目的。
       val groupByAliases = constructGroupByAlias(finalGroupByExpressions)
 
       val expand = constructExpand(selectedGroupByExprs, child, groupByAliases, gid)
@@ -545,9 +543,9 @@ class Analyzer(
           throw new AnalysisException(
             s"Invalid pivot column '${pivotColumn}'. Pivot columns must be comparable.")
         }
-        // Check all aggregate expressions.
+        // 检查所有聚合表达式
         aggregates.foreach(checkValidAggregateExpression)
-        // Check all pivot values are literal and match pivot column data type.
+        // 检查所有透视值是否为文本并匹配透视列数据类型。
         val evalPivotValues = pivotValues.map { value =>
           val foldable = value match {
             case Alias(v, _) => v.foldable
@@ -564,7 +562,7 @@ class Analyzer(
           }
           Cast(value, pivotColumn.dataType, Some(conf.sessionLocalTimeZone)).eval(EmptyRow)
         }
-        // Group-by expressions coming from SQL are implicit and need to be deduced.
+        //来自SQL的group-by表达式是隐式的，需要推导。
         val groupByExprs = groupByExprsOpt.getOrElse {
           val pivotColAndAggRefs = pivotColumn.references ++ AttributeSet(aggregates)
           child.output.filterNot(pivotColAndAggRefs.contains)
@@ -589,8 +587,8 @@ class Analyzer(
           }
         }
         if (aggregates.forall(a => PivotFirst.supportsDataType(a.dataType))) {
-          // Since evaluating |pivotValues| if statements for each input row can get slow this is an
-          // alternate plan that instead uses two steps of aggregation.
+          // 因为对每个输入行的PivotValues if语句进行计算会变慢，所以这是一个
+          // 使用两个聚合步骤的备用计划。
           val namedAggExps: Seq[NamedExpression] = aggregates.map(a => Alias(a, a.sql)())
           val namedPivotCol = pivotColumn match {
             case n: NamedExpression => n
@@ -623,9 +621,8 @@ class Analyzer(
             }
             aggregates.map { aggregate =>
               val filteredAggregate = aggregate.transformDown {
-                // Assumption is the aggregate function ignores nulls. This is true for all current
-                // AggregateFunction's with the exception of First and Last in their default mode
-                // (which we handle) and possibly some Hive UDAF's.
+                // 假设是聚合函数忽略空值。对于所有当前的aggregateFunction都是这样的，
+                // 除了第一个和最后一个处于默认模式（我们处理）的函数，可能还有一些配置单元udaf。
                 case First(expr, _) =>
                   First(ifExpr(expr), Literal(true))
                 case Last(expr, _) =>
@@ -633,9 +630,8 @@ class Analyzer(
                 case a: AggregateFunction =>
                   a.withNewChildren(a.children.map(ifExpr))
               }.transform {
-                // We are duplicating aggregates that are now computing a different value for each
-                // pivot value.
-                // TODO: Don't construct the physical container until after analysis.
+                //我们正在复制聚合，这些聚合现在正在为每个聚合计算不同的值透视值。
+                //TODO:在分析之后才构造物理容器。
                 case ae: AggregateExpression => ae.copy(resultId = NamedExpression.newExprId)
               }
               Alias(filteredAggregate, outputName(value, aggregate))()
@@ -645,8 +641,8 @@ class Analyzer(
         }
     }
 
-    // Support any aggregate expression that can appear in an Aggregate plan except Pandas UDF.
-    // TODO: Support Pandas UDF.
+    //支持聚合计划中可以出现的任何聚合表达式，熊猫UDF除外。
+    //TODO:支持pandasUDF。
     private def checkValidAggregateExpression(expr: Expression): Unit = expr match {
       case _: AggregateExpression => // OK and leave the argument check to CheckAnalysis.
       case expr: PythonUDF if PythonUDF.isGroupedAggPandasUDF(expr) =>
@@ -705,8 +701,10 @@ class Analyzer(
     // Note this is compatible with the views defined by older versions of Spark(before 2.2), which
     // have empty defaultDatabase and all the relations in viewText have database part defined.
     def resolveRelation(plan: LogicalPlan): LogicalPlan = plan match {
+      //若为UnresolvedRelation，则调用resolveRelation方法进行解析：
+      //不是这种情况 select * from parquet.`/path/to/query`
       case u @ UnresolvedRelation(AsTableIdentifier(ident)) if !isRunningDirectlyOnFiles(ident) =>
-        val defaultDatabase = AnalysisContext.get.defaultDatabase
+        val defaultDatabase = AnalysisContext.get.defaultDatabase//获取数据名称
         val foundRelation = lookupTableFromCatalog(ident, u, defaultDatabase)
         if (foundRelation != u) {
           resolveRelation(foundRelation)
