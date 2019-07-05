@@ -2607,12 +2607,11 @@ class Analyzer(
 }
 
 /**
- * Removes [[SubqueryAlias]] operators from the plan. Subqueries are only required to provide
- * scoping information for attributes and can be removed once analysis is complete.
+ * 从计划中删除[[子查询别名]]运算符。子查询只需要提供属性的范围信息，分析完成后可以删除。
  */
 object EliminateSubqueryAliases extends Rule[LogicalPlan] {
-  // This is also called in the beginning of the optimization phase, and as a result
-  // is using transformUp rather than resolveOperators.
+  //这也在优化阶段的开始时调用，因此
+  //正在使用TransformUp而不是ResolveOperators。
   def apply(plan: LogicalPlan): LogicalPlan = AnalysisHelper.allowInvokingTransformsInAnalyzer {
     plan transformUp {
       case SubqueryAlias(_, child) => child
