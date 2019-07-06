@@ -777,21 +777,21 @@ class Analyzer(
   }
 
   /**
-   * Replaces [[UnresolvedAttribute]]s with concrete [[AttributeReference]]s from
-   * a logical plan node's children.
+   * 用来自的具体的[[attributereference]]s替换[[unsolvedattribute]]s逻辑计划节点的子节点。
    */
   object ResolveReferences extends Rule[LogicalPlan] {
     /**
-     * Generate a new logical plan for the right child with different expression IDs
-     * for all conflicting attributes.
+     * 为具有不同表达式ID的右子级生成新的逻辑计划对于所有冲突的属性。
+     * 入参是左逻辑计划，右逻辑计划，防返回一个新逻辑计划
      */
     private def dedupRight (left: LogicalPlan, right: LogicalPlan): LogicalPlan = {
+      //属性冲突的变量
       val conflictingAttributes = left.outputSet.intersect(right.outputSet)
       logDebug(s"Conflicting attributes ${conflictingAttributes.mkString(",")} " +
         s"between $left and $right")
 
       right.collect {
-        // Handle base relations that might appear more than once.
+        // 处理可能出现多次的基本关系。
         case oldVersion: MultiInstanceRelation
             if oldVersion.outputSet.intersect(conflictingAttributes).nonEmpty =>
           val newVersion = oldVersion.newInstance()
@@ -801,7 +801,7 @@ class Analyzer(
             if oldVersion.outputSet.intersect(conflictingAttributes).nonEmpty =>
           (oldVersion, oldVersion.copy(serializer = oldVersion.serializer.map(_.newInstance())))
 
-        // Handle projects that create conflicting aliases.
+        // 处理创建冲突别名的项目。
         case oldVersion @ Project(projectList, _)
             if findAliases(projectList).intersect(conflictingAttributes).nonEmpty =>
           (oldVersion, oldVersion.copy(projectList = newAliases(projectList)))
@@ -824,13 +824,13 @@ class Analyzer(
               .nonEmpty =>
           (oldVersion, oldVersion.copy(windowExpressions = newAliases(windowExpressions)))
       }
-        // Only handle first case, others will be fixed on the next pass.
+        // 只处理第一种情况，其他情况将在下一个通行证上解决。
         .headOption match {
         case None =>
           /*
-           * No result implies that there is a logical plan node that produces new references
-           * that this rule cannot handle. When that is the case, there must be another rule
-           * that resolves these conflicts. Otherwise, the analysis will fail.
+           * 没有结果意味着有一个逻辑计划节点产生新的引用
+           * 这条规则无法处理。如果是这样的话，一定还有另外一条规则
+           * 解决了这些冲突。否则，分析将失败。
            */
           right
         case Some((oldRelation, newRelation)) =>
@@ -854,8 +854,8 @@ class Analyzer(
     }
 
     /**
-     * The outer plan may have been de-duplicated and the function below updates the
-     * outer references to refer to the de-duplicated attributes.
+     * 
+     * 外部计划可能已被消除重复，下面的功能更新外部引用以引用消除重复的属性。
      *
      * For example (SQL):
      * {{{
@@ -907,25 +907,21 @@ class Analyzer(
     }
 
     /**
-     * Resolves the attribute and extract value expressions(s) by traversing the
-     * input expression in top down manner. The traversal is done in top-down manner as
-     * we need to skip over unbound lamda function expression. The lamda expressions are
-     * resolved in a different rule [[ResolveLambdaVariables]]
+     * 通过自顶向下遍历输入表达式来解析属性并提取值表达式。
+     * 他以自上而下的方式 我们需要跳过未绑定的lamda函数表达式。lamda的表达是在另一个规则中解析[[resolvelambdavariables]]
      *
      * Example :
      * SELECT transform(array(1, 2, 3), (x, i) -> x + i)"
      *
      * In the case above, x and i are resolved as lamda variables in [[ResolveLambdaVariables]]
-     *
-     * Note : In this routine, the unresolved attributes are resolved from the input plan's
-     * children attributes.
+     * 在这个例程中，未解析的属性是从输入计划的子属性。
      */
     private def resolveExpressionTopDown(e: Expression, q: LogicalPlan): Expression = {
       if (e.resolved) return e
       e match {
         case f: LambdaFunction if !f.bound => f
         case u @ UnresolvedAttribute(nameParts) =>
-          // Leave unchanged if resolution fails. Hopefully will be resolved next round.
+          // 如果解决失败，请保持不变。希望下一轮能解决。
           val result =
             withPosition(u) {
               q.resolveChildren(nameParts, resolver)
@@ -941,12 +937,13 @@ class Analyzer(
     }
 
     def apply(plan: LogicalPlan): LogicalPlan = plan.resolveOperatorsUp {
+      // 逻辑计划
       case p: LogicalPlan if !p.childrenResolved => p
 
-      // If the projection list contains Stars, expand it.
+      // 如果projection包含Stars,则展开
       case p: Project if containsStar(p.projectList) =>
         p.copy(projectList = buildExpandedProjectList(p.projectList, p.child))
-      // If the aggregate function argument contains Stars, expand it.
+      // 如果aggregate函数的参数包含Stars,则展开
       case a: Aggregate if containsStar(a.aggregateExpressions) =>
         if (a.groupingExpressions.exists(_.isInstanceOf[UnresolvedOrdinal])) {
           failAnalysis(
@@ -954,7 +951,7 @@ class Analyzer(
         } else {
           a.copy(aggregateExpressions = buildExpandedProjectList(a.aggregateExpressions, a.child))
         }
-      // If the script transformation input contains Stars, expand it.
+      // 如果转换脚本入参包含Stars,则展开
       case t: ScriptTransformation if containsStar(t.input) =>
         t.copy(
           input = t.input.flatMap {
@@ -962,10 +959,12 @@ class Analyzer(
             case o => o :: Nil
           }
         )
+      //如果生成子逻辑中包含Stars,则展开
       case g: Generate if containsStar(g.generator.children) =>
+        //非法检查
         failAnalysis("Invalid usage of '*' in explode/json_tuple/UDTF")
 
-      // To resolve duplicate expression IDs for Join and Intersect
+      // 解析join和intersect的重复表达式ID
       case j @ Join(left, right, _, _, _) if !j.duplicateResolved =>
         j.copy(right = dedupRight(left, right))
       case i @ Intersect(left, right, _) if !i.duplicateResolved =>
@@ -988,15 +987,14 @@ class Analyzer(
         }
         u.copy(children = newChildren)
 
-      // When resolve `SortOrder`s in Sort based on child, don't report errors as
-      // we still have chance to resolve it based on its descendants
+      // 在基于子级的排序中解析“sortorder”时，不要将错误报告
+      // 因为我们仍然有机会根据它的后代来解决它
       case s @ Sort(ordering, global, child) if child.resolved && !s.resolved =>
         val newOrdering =
           ordering.map(order => resolveExpressionBottomUp(order, child).asInstanceOf[SortOrder])
         Sort(newOrdering, global, child)
 
-      // A special case for Generate, because the output of Generate should not be resolved by
-      // ResolveReferences. Attributes in the output will be resolved by ResolveGenerate.
+      //生成的特殊情况，因为生成的输出不应通过解析器引用。输出中的属性将由resolvegenerate解析。
       case g @ Generate(generator, _, _, _, _, _) if generator.resolved => g
 
       case g @ Generate(generator, join, outer, qualifier, output, child) =>
@@ -1007,19 +1005,18 @@ class Analyzer(
           Generate(newG.asInstanceOf[Generator], join, outer, qualifier, output, child)
         }
 
-      // Skips plan which contains deserializer expressions, as they should be resolved by another
-      // rule: ResolveDeserializer.
+      // 跳过包含反序列化程序表达式的计划，因为它们应该由另一个规则：resolvederializer。
       case plan if containsDeserializer(plan.expressions) => plan
 
-      // SPARK-25942: Resolves aggregate expressions with `AppendColumns`'s children, instead of
-      // `AppendColumns`, because `AppendColumns`'s serializer might produce conflict attribute
-      // names leading to ambiguous references exception.
+      // SPARK-25942: 解析具有“appendcolumns”子级的聚合表达式而不是
+      // `AppendColumns`，因为'AppendColumns`'的序列化程序可能会产生冲突属性
+      // 导致不明确引用异常的名称。
       case a @ Aggregate(groupingExprs, aggExprs, appendColumns: AppendColumns) =>
         a.mapExpressions(resolveExpressionTopDown(_, appendColumns))
 
       case o: OverwriteByExpression if !o.outputResolved =>
-        // do not resolve expression attributes until the query attributes are resolved against the
-        // table by ResolveOutputRelation. that rule will alias the attributes to the table's names.
+      // 在对查询属性进行解析之前，不要解析表达式属性
+      // 由resolveOutputRelation创建的表。该规则将属性别名为表的名称。
         o
 
       case q: LogicalPlan =>
@@ -1039,7 +1036,7 @@ class Analyzer(
     }
 
     /**
-     * Build a project list for Project/Aggregate and expand the star if possible
+     * 为 Project/Aggregate 构建一个项目列表，并尽可能扩展
      */
     private def buildExpandedProjectList(
       exprs: Seq[NamedExpression],
@@ -1055,13 +1052,13 @@ class Analyzer(
     }
 
     /**
-     * Returns true if `exprs` contains a [[Star]].
+     * 如果“exprs”包含[[Star]]，则返回true。
      */
     def containsStar(exprs: Seq[Expression]): Boolean =
       exprs.exists(_.collect { case _: Star => true }.nonEmpty)
 
     /**
-     * Expands the matching attribute.*'s in `child`'s output.
+     * 在子节点中展开匹配的*'s的属性
      */
     def expandStarExpression(expr: Expression, child: LogicalPlan): Expression = {
       expr.transformUp {
@@ -1103,14 +1100,15 @@ class Analyzer(
   }
 
   /**
-   * Literal functions do not require the user to specify braces when calling them
-   * When an attributes is not resolvable, we try to resolve it as a literal function.
+   * 当属性不可解析时，文本函数不要求用户在调用它们时指定大括号，我们尝试将其解析为文本函数。
    */
   private def resolveLiteralFunction(
       nameParts: Seq[String],
       attribute: UnresolvedAttribute,
       plan: LogicalPlan): Option[Expression] = {
+    //如果入参nameParts!=1说明参数异常
     if (nameParts.length != 1) return None
+    //判断是否是命名好的表达式，boolean类型
     val isNamedExpression = plan match {
       case Aggregate(_, aggregateExpressions, _) => aggregateExpressions.contains(attribute)
       case Project(projectList, _) => projectList.contains(attribute)
@@ -1119,7 +1117,7 @@ class Analyzer(
     }
     val wrapper: Expression => Expression =
       if (isNamedExpression) f => Alias(f, toPrettySQL(f))() else identity
-    // support CURRENT_DATE and CURRENT_TIMESTAMP
+    // 支持当前日期和当前时间戳
     val literalFunctions = Seq(CurrentDate(), CurrentTimestamp())
     val name = nameParts.head
     val func = literalFunctions.find(e => caseInsensitiveResolution(e.prettyName, name))
@@ -1127,29 +1125,25 @@ class Analyzer(
   }
 
   /**
-   * Resolves the attribute, column value and extract value expressions(s) by traversing the
-   * input expression in bottom-up manner. In order to resolve the nested complex type fields
-   * correctly, this function makes use of `throws` parameter to control when to raise an
-   * AnalysisException.
+   * 通过遍历自下而上的输入表达式。为了解析嵌套的复杂类型字段
+   * 或者说，此函数使用“throws”参数控制何时引发分析例外。
    *
    * Example :
    * SELECT a.b FROM t ORDER BY b[0].d
    *
-   * In the above example, in b needs to be resolved before d can be resolved. Given we are
-   * doing a bottom up traversal, it will first attempt to resolve d and fail as b has not
-   * been resolved yet. If `throws` is false, this function will handle the exception by
-   * returning the original attribute. In this case `d` will be resolved in subsequent passes
-   * after `b` is resolved.
+   * 在上面的例子中，需要先解决B中的问题，然后才能解决D中的问题。鉴于我们执行自下而上的遍历时
+   * 它将首先尝试解析d并失败，因为b没有解决。
+   * 如果“throws”为false，则此函数将通过返回原始属性来处理异常。在这种情况下，“d”将在“b”解析之后的后续过程中解析。
    */
   protected[sql] def resolveExpressionBottomUp(
       expr: Expression,
       plan: LogicalPlan,
       throws: Boolean = false): Expression = {
     if (expr.resolved) return expr
-    // Resolve expression in one round.
-    // If throws == false or the desired attribute doesn't exist
-    // (like try to resolve `a.b` but `a` doesn't exist), fail and return the origin one.
-    // Else, throw exception.
+    // 在一轮中解析表达式。
+    // 如果throws == false 或者 the 想要属性不存在
+    // (如 尝试去解析 `a.b` 但是 `a` 不存在), 失败返回原始expr
+    // 否则抛出异常
     try {
       expr transformUp {
         case GetColumnByOrdinal(ordinal, _) => plan.output(ordinal)
