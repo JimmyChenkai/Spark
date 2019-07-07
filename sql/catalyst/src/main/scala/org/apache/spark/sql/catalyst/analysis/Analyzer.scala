@@ -1165,23 +1165,19 @@ class Analyzer(
   }
 
   /**
-   * In many dialects of SQL it is valid to use ordinal positions in order/sort by and group by
-   * clauses. This rule is to convert ordinal positions to the corresponding expressions in the
-   * select list. This support is introduced in Spark 2.0.
+   * 在许多SQL语法中在ORDER/SORT BY和GROUP BY子句中使用顺序位置是有效的。此规则用于将序号位置转换为选择列表中相应的表达式。
+   * Spark 2.0中引入了此支持。
    *
-   * - When the sort references or group by expressions are not integer but foldable expressions,
-   * just ignore them.
-   * - When spark.sql.orderByOrdinal/spark.sql.groupByOrdinal is set to false, ignore the position
-   * numbers too.
+   * - 当时sort或者groupby不是整型，但是foldable表达式就忽略
+   * - 当spark.sql.orderByOrdinal/spark.sql.groupByOrdinal 参数是false, 也同样忽略
    *
-   * Before the release of Spark 2.0, the literals in order/sort by and group by clauses
-   * have no effect on the results.
+   * Spark 2.0版本之前, order/sort by and group by 是无效的
    */
   object ResolveOrdinalInOrderByAndGroupBy extends Rule[LogicalPlan] {
     def apply(plan: LogicalPlan): LogicalPlan = plan.resolveOperatorsUp {
       case p if !p.childrenResolved => p
-      // Replace the index with the related attribute for ORDER BY,
-      // which is a 1-base position of the projection list.
+      // 将索引替换为order by的相关属性，
+      // 它是投影列表的1个基位置。
       case Sort(orders, global, child)
         if orders.exists(_.child.isInstanceOf[UnresolvedOrdinal]) =>
         val newOrders = orders map {
@@ -1197,8 +1193,8 @@ class Analyzer(
         }
         Sort(newOrders, global, child)
 
-      // Replace the index with the corresponding expression in aggregateExpressions. The index is
-      // a 1-base position of aggregateExpressions, which is output columns (select expression)
+      // 将索引替换为AggregateExpressions中的相应表达式。索引是
+      //AggregateExpressions的1个基位置，即输出列（Select Expression）
       case Aggregate(groups, aggs, child) if aggs.forall(_.resolved) &&
         groups.exists(_.isInstanceOf[UnresolvedOrdinal]) =>
         val newGroups = groups.map {
@@ -1215,13 +1211,12 @@ class Analyzer(
   }
 
   /**
-   * Replace unresolved expressions in grouping keys with resolved ones in SELECT clauses.
-   * This rule is expected to run after [[ResolveReferences]] applied.
+   * 将分组键中的未解析表达式替换为select子句中的已解析表达式。
+   * 此规则应在应用了[[冲突解决程序引用]]之后运行。
    */
   object ResolveAggAliasInGroupBy extends Rule[LogicalPlan] {
 
-    // This is a strict check though, we put this to apply the rule only if the expression is not
-    // resolvable by child.
+    // 不过，这是一个严格的检查，我们将此设置为仅在子表达式不可解析时应用规则。
     private def notResolvableByChild(attrName: String, child: LogicalPlan): Boolean = {
       !child.output.exists(a => resolver(a.name, attrName))
     }
@@ -1235,11 +1230,12 @@ class Analyzer(
     }
 
     override def apply(plan: LogicalPlan): LogicalPlan = plan.resolveOperatorsUp {
+      //如果是聚合
       case agg @ Aggregate(groups, aggs, child)
           if conf.groupByAliases && child.resolved && aggs.forall(_.resolved) &&
             groups.exists(!_.resolved) =>
         agg.copy(groupingExpressions = mayResolveAttrByAggregateExprs(groups, aggs, child))
-
+      //如果是分组集合
       case gs @ GroupingSets(selectedGroups, groups, child, aggs)
           if conf.groupByAliases && child.resolved && aggs.forall(_.resolved) &&
             groups.exists(_.isInstanceOf[UnresolvedAttribute]) =>
@@ -1250,16 +1246,15 @@ class Analyzer(
   }
 
   /**
-   * In many dialects of SQL it is valid to sort by attributes that are not present in the SELECT
-   * clause.  This rule detects such queries and adds the required attributes to the original
-   * projection, so that they will be available during sorting. Another projection is added to
-   * remove these attributes after sorting.
+   * 在常规的SQL语法规则中，有很多sort的语法是没有在select语句中体现出来的。
+   * 这个方法就是发现这种查询，同时把这种查询属性补上到常规的projection
+   * 保证能完整有序的排序。 添加另一个projection以在排序后删除这些属性。
    *
-   * The HAVING clause could also used a grouping columns that is not presented in the SELECT.
+   * HAVING子句还可以使用SELECT中未显示的分组列。
    */
   object ResolveMissingReferences extends Rule[LogicalPlan] {
     def apply(plan: LogicalPlan): LogicalPlan = plan.resolveOperatorsUp {
-      // Skip sort with aggregate. This will be handled in ResolveAggregateFunctions
+      // 跳过聚合排序。这将在ResolveAgregateFunctions中处理
       case sa @ Sort(_, _, child: Aggregate) => sa
 
       case s @ Sort(order, _, child)
@@ -1269,7 +1264,7 @@ class Analyzer(
         if (child.output == newChild.output) {
           s.copy(order = ordering)
         } else {
-          // Add missing attributes and then project them away.
+          //添加缺少的属性，然后将它们投影掉。
           val newSort = s.copy(order = ordering, child = newChild)
           Project(child.output, newSort)
         }
@@ -1279,33 +1274,31 @@ class Analyzer(
         if (child.output == newChild.output) {
           f.copy(condition = newCond.head)
         } else {
-          // Add missing attributes and then project them away.
+          // 添加缺少的属性，然后将它们投影掉。
           val newFilter = Filter(newCond.head, newChild)
           Project(child.output, newFilter)
         }
     }
 
     /**
-     * This method tries to resolve expressions and find missing attributes recursively. Specially,
-     * when the expressions used in `Sort` or `Filter` contain unresolved attributes or resolved
-     * attributes which are missed from child output. This method tries to find the missing
-     * attributes out and add into the projection.
+     * 此方法尝试递归解析表达式并查找缺少的属性。
+     * 特别是当“sort”或“filter”中使用的表达式包含未解析的属性或子输出中缺少的已解析属性时。
+     * 此方法试图找出缺少的属性并将其添加到投影中。
      */
     private def resolveExprsAndAddMissingAttrs(
         exprs: Seq[Expression], plan: LogicalPlan): (Seq[Expression], LogicalPlan) = {
-      // Missing attributes can be unresolved attributes or resolved attributes which are not in
-      // the output attributes of the plan.
+      
+      // 缺少的属性可以是未解析的属性或未在计划的输出属性中解析的属性。
       if (exprs.forall(e => e.resolved && e.references.subsetOf(plan.outputSet))) {
         (exprs, plan)
       } else {
         plan match {
           case p: Project =>
-            // Resolving expressions against current plan.
+            // 正在根据当前计划解析表达式。
             val maybeResolvedExprs = exprs.map(resolveExpressionBottomUp(_, p))
             // Recursively resolving expressions on the child of current plan.
             val (newExprs, newChild) = resolveExprsAndAddMissingAttrs(maybeResolvedExprs, p.child)
-            // If some attributes used by expressions are resolvable only on the rewritten child
-            // plan, we need to add them into original projection.
+            // 如果表达式使用的某些属性只能在重写的子计划上解析，则需要将它们添加到原始投影中。
             val missingAttrs = (AttributeSet(newExprs) -- p.outputSet).intersect(newChild.outputSet)
             (newExprs, Project(p.projectList ++ missingAttrs, newChild))
 
@@ -1314,10 +1307,10 @@ class Analyzer(
             val (newExprs, newChild) = resolveExprsAndAddMissingAttrs(maybeResolvedExprs, child)
             val missingAttrs = (AttributeSet(newExprs) -- a.outputSet).intersect(newChild.outputSet)
             if (missingAttrs.forall(attr => groupExprs.exists(_.semanticEquals(attr)))) {
-              // All the missing attributes are grouping expressions, valid case.
+              // 所有缺少的属性都是分组表达式，有效大小写。
               (newExprs, a.copy(aggregateExpressions = aggExprs ++ missingAttrs, child = newChild))
             } else {
-              // Need to add non-grouping attributes, invalid case.
+              // 需要添加非分组属性，大小写无效。
               (exprs, a)
             }
 
@@ -1326,14 +1319,13 @@ class Analyzer(
             val (newExprs, newChild) = resolveExprsAndAddMissingAttrs(maybeResolvedExprs, g.child)
             (newExprs, g.copy(unrequiredChildIndex = Nil, child = newChild))
 
-          // For `Distinct` and `SubqueryAlias`, we can't recursively resolve and add attributes
-          // via its children.
+          // 对于“distinct”和“subqueryalias”，我们无法通过其子级递归解析和添加属性。
           case u: UnaryNode if !u.isInstanceOf[Distinct] && !u.isInstanceOf[SubqueryAlias] =>
             val maybeResolvedExprs = exprs.map(resolveExpressionBottomUp(_, u))
             val (newExprs, newChild) = resolveExprsAndAddMissingAttrs(maybeResolvedExprs, u.child)
             (newExprs, u.withNewChildren(Seq(newChild)))
 
-          // For other operators, we can't recursively resolve and add attributes via its children.
+          // 对于其他运算符，我们不能通过其子级递归解析和添加属性。
           case other =>
             (exprs.map(resolveExpressionBottomUp(_, other)), other)
         }
@@ -1342,28 +1334,30 @@ class Analyzer(
   }
 
   /**
-   * Checks whether a function identifier referenced by an [[UnresolvedFunction]] is defined in the
-   * function registry. Note that this rule doesn't try to resolve the [[UnresolvedFunction]]. It
-   * only performs simple existence check according to the function identifier to quickly identify
-   * undefined functions without triggering relation resolution, which may incur potentially
-   * expensive partition/schema discovery process in some cases.
-   * In order to avoid duplicate external functions lookup, the external function identifier will
-   * store in the local hash set externalFunctionNameSet.
+   * 检查函数注册表中是否定义了由[[UnsolvedFunction]引用的函数标识符
+   * 请注意，此规则不会尝试解析[[未解析函数]]。
+   * 它只根据函数标识符执行简单的存在性检查，以快速识别未定义的函数，
+   * 而不触发关系解析，这在某些情况下可能会导致昂贵的分区/模式发现过程。
+   * 为了避免重复的外部函数查找，外部函数标识符将存储在本地哈希集ExternalFunctionNameset中。
+   * 
    * @see [[ResolveFunctions]]
    * @see https://issues.apache.org/jira/browse/SPARK-19737
    */
   object LookupFunctions extends Rule[LogicalPlan] {
     override def apply(plan: LogicalPlan): LogicalPlan = {
+      //外部函数标识符
       val externalFunctionNameSet = new mutable.HashSet[FunctionIdentifier]()
       plan.resolveExpressions {
         case f: UnresolvedFunction
           if externalFunctionNameSet.contains(normalizeFuncName(f.name)) => f
         case f: UnresolvedFunction if catalog.isRegisteredFunction(f.name) => f
+        //如果未解析的函数是持久化，则新增到externalFunctinsNameSet
         case f: UnresolvedFunction if catalog.isPersistentFunction(f.name) =>
           externalFunctionNameSet.add(normalizeFuncName(f.name))
           f
         case f: UnresolvedFunction =>
           withPosition(f) {
+            //找不到此方法
             throw new NoSuchFunctionException(f.name.database.getOrElse(catalog.getCurrentDatabase),
               f.name.funcName)
           }
@@ -1391,13 +1385,13 @@ class Analyzer(
   }
 
   /**
-   * Replaces [[UnresolvedFunction]]s with concrete [[Expression]]s.
+   * 把 [[UnresolvedFunction]]s 转换为具体的[[Expression]]s.
    */
   object ResolveFunctions extends Rule[LogicalPlan] {
     def apply(plan: LogicalPlan): LogicalPlan = plan.resolveOperatorsUp {
       case q: LogicalPlan =>
         q transformExpressions {
-          case u if !u.childrenResolved => u // Skip until children are resolved.
+          case u if !u.childrenResolved => u // 跳过，直到子节点解析
           case u: UnresolvedAttribute if resolver(u.name, VirtualColumn.hiveGroupingIdName) =>
             withPosition(u) {
               Alias(GroupingID(Nil), VirtualColumn.hiveGroupingIdName)()
@@ -1414,18 +1408,18 @@ class Analyzer(
           case u @ UnresolvedFunction(funcId, children, isDistinct) =>
             withPosition(u) {
               catalog.lookupFunction(funcId, children) match {
-                // AggregateWindowFunctions are AggregateFunctions that can only be evaluated within
-                // the context of a Window clause. They do not need to be wrapped in an
-                // AggregateExpression.
+                //AggregateWindowFunctions是只能在
+                //window子句的上下文。它们不需要用
+                //聚合表达式。
                 case wf: AggregateWindowFunction =>
                   if (isDistinct) {
                     failAnalysis(s"${wf.prettyName} does not support the modifier DISTINCT")
                   } else {
                     wf
                   }
-                // We get an aggregate function, we need to wrap it in an AggregateExpression.
+                // 我们得到一个聚合函数，我们需要将它包装在一个AggregateExpression中。
                 case agg: AggregateFunction => AggregateExpression(agg, Complete, isDistinct)
-                // This function is not an aggregate function, just return the resolved one.
+                // 此函数不是聚合函数，只返回已解析的函数。
                 case other =>
                   if (isDistinct) {
                     failAnalysis(s"${other.prettyName} does not support the modifier DISTINCT")
@@ -1439,14 +1433,14 @@ class Analyzer(
   }
 
   /**
-   * This rule resolves and rewrites subqueries inside expressions.
+   * 此规则解析并重写表达式中的子查询。
    *
-   * Note: CTEs are handled in CTESubstitution.
+   * 注：CTE在CTESubstitution替换中处理。
    */
   object ResolveSubquery extends Rule[LogicalPlan] with PredicateHelper {
     /**
-     * Resolve the correlated expressions in a subquery by using the an outer plans' references. All
-     * resolved outer references are wrapped in an [[OuterReference]]
+     * 通过使用外部计划的引用解析子查询中的相关表达式。
+     * 全部解析的外部引用被包装在一个[[outerreference]]
      */
     private def resolveOuterReferences(plan: LogicalPlan, outer: LogicalPlan): LogicalPlan = {
       plan resolveOperatorsDown {
@@ -1468,26 +1462,26 @@ class Analyzer(
     }
 
     /**
-     * Resolves the subquery plan that is referenced in a subquery expression. The normal
-     * attribute references are resolved using regular analyzer and the outer references are
-     * resolved from the outer plans using the resolveOuterReferences method.
+     * 解析子查询表达式中引用的子查询计划。
+     * 
+     * 常规属性引用使用常规分析器解析，外部引用使用ResolveOuterReferences方法从外部计划解析。
      *
-     * Outer references from the correlated predicates are updated as children of
-     * Subquery expression.
+     * 相关谓词的外部引用将更新为子查询表达式的子级。
+     * 
      */
     private def resolveSubQuery(
         e: SubqueryExpression,
         plans: Seq[LogicalPlan])(
         f: (LogicalPlan, Seq[Expression]) => SubqueryExpression): SubqueryExpression = {
-      // Step 1: Resolve the outer expressions.
+      // Step 1: 解析外部表达式。
       var previous: LogicalPlan = null
       var current = e.plan
       do {
-        // Try to resolve the subquery plan using the regular analyzer.
+        // 尝试使用常规分析器解析子查询计划。
         previous = current
         current = executeSameContext(current)
 
-        // Use the outer references to resolve the subquery plan if it isn't resolved yet.
+        // 如果尚未解析子查询计划，请使用外部引用来解析它。
         val i = plans.iterator
         val afterResolve = current
         while (!current.resolved && current.fastEquals(afterResolve) && i.hasNext) {
@@ -1495,10 +1489,9 @@ class Analyzer(
         }
       } while (!current.resolved && !current.fastEquals(previous))
 
-      // Step 2: If the subquery plan is fully resolved, pull the outer references and record
-      // them as children of SubqueryExpression.
+      // Step 2: 如果子查询计划已完全解析，则拉动外部引用并将其记录为子查询表达式的子级。
       if (current.resolved) {
-        // Record the outer references as children of subquery expression.
+        // 将外部引用记录为子查询表达式的子级。
         f(current, SubExprUtils.getOuterReferences(current))
       } else {
         e.withNewPlan(current)
@@ -1506,13 +1499,12 @@ class Analyzer(
     }
 
     /**
-     * Resolves the subquery. Apart of resolving the subquery and outer references (if any)
-     * in the subquery plan, the children of subquery expression are updated to record the
-     * outer references. This is needed to make sure
-     * (1) The column(s) referred from the outer query are not pruned from the plan during
-     *     optimization.
-     * (2) Any aggregate expression(s) that reference outer attributes are pushed down to
-     *     outer plan to get evaluated.
+     * .
+     * 除了解析子查询计划中的子查询和外部引用（如果有的话），子查询表达式的子级也会更新以记录外部引用。
+     * 需要两点
+     * (1) 在优化期间，不会从计划中删除来自外部查询的列   
+     * (2) 引用外部属性的任何聚合表达式都被下推到外部计划以进行计算。
+     *     
      */
     private def resolveSubQueries(plan: LogicalPlan, plans: Seq[LogicalPlan]): LogicalPlan = {
       plan transformExpressions {
