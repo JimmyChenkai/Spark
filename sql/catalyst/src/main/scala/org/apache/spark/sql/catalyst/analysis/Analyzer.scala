@@ -1536,17 +1536,16 @@ class Analyzer(
   }
 
   /**
-   * Replaces unresolved column aliases for a subquery with projections.
+   * 用projections替换子查询的未解析列别名。
    */
   object ResolveSubqueryColumnAliases extends Rule[LogicalPlan] {
 
      def apply(plan: LogicalPlan): LogicalPlan = plan.resolveOperatorsUp {
       case u @ UnresolvedSubqueryColumnAliases(columnNames, child) if child.resolved =>
-        // Resolves output attributes if a query has alias names in its subquery:
+        // 如果查询的子查询中有别名，则解析输出属性：
         // e.g., SELECT * FROM (SELECT 1 AS a, 1 AS b) t(col1, col2)
         val outputAttrs = child.output
-        // Checks if the number of the aliases equals to the number of output columns
-        // in the subquery.
+        // 检查别名数是否等于子查询中的输出列数。
         if (columnNames.size != outputAttrs.size) {
           u.failAnalysis("Number of column aliases does not match number of columns. " +
             s"Number of column aliases: ${columnNames.size}; " +
@@ -1560,7 +1559,7 @@ class Analyzer(
   }
 
   /**
-   * Turns projections that contain aggregate expressions into aggregations.
+   * 把projections中包含聚合表达式的转为聚合
    */
   object GlobalAggregates extends Rule[LogicalPlan] {
     def apply(plan: LogicalPlan): LogicalPlan = plan.resolveOperators {
@@ -1569,14 +1568,14 @@ class Analyzer(
     }
 
     def containsAggregates(exprs: Seq[Expression]): Boolean = {
-      // Collect all Windowed Aggregate Expressions.
+      // 收集所有窗口聚合表达式。
       val windowedAggExprs = exprs.flatMap { expr =>
         expr.collect {
           case WindowExpression(ae: AggregateExpression, _) => ae
         }
       }.toSet
 
-      // Find the first Aggregate Expression that is not Windowed.
+      //查找第一个没有窗口的聚合表达式。
       exprs.exists(_.collectFirst {
         case ae: AggregateExpression if !windowedAggExprs.contains(ae) => ae
       }.isDefined)
@@ -1584,15 +1583,15 @@ class Analyzer(
   }
 
   /**
-   * This rule finds aggregate expressions that are not in an aggregate operator.  For example,
-   * those in a HAVING clause or ORDER BY clause.  These expressions are pushed down to the
-   * underlying aggregate operator and then projected away after the original operator.
+   * 此规则查找不在聚合运算符中的聚合表达式。 例如
+   * HAVING子句或ORDER BY子句中的那些.  
+   * 这些表达式被下推到基础聚合运算符，然后在原始运算符之后被投影掉。
    */
   object ResolveAggregateFunctions extends Rule[LogicalPlan] {
     def apply(plan: LogicalPlan): LogicalPlan = plan.resolveOperatorsUp {
       case f @ Filter(cond, agg @ Aggregate(grouping, originalAggExprs, child)) if agg.resolved =>
 
-        // Try resolving the condition of the filter as though it is in the aggregate clause
+        // 尝试像在aggregate子句中那样解析筛选器的条件。
         try {
           val aggregatedCondition =
             Aggregate(
@@ -1605,17 +1604,16 @@ class Analyzer(
               .asInstanceOf[Aggregate]
               .aggregateExpressions.head
 
-          // If resolution was successful and we see the filter has an aggregate in it, add it to
-          // the original aggregate operator.
+          // 如果解析成功，并且我们看到过滤器中有一个聚合，请将其添加到原始聚合运算符中。
           if (resolvedOperator.resolved) {
-            // Try to replace all aggregate expressions in the filter by an alias.
+            // 尝试用别名替换筛选器中的所有聚合表达式。
             val aggregateExpressions = ArrayBuffer.empty[NamedExpression]
             val transformedAggregateFilter = resolvedAggregateFilter.transform {
               case ae: AggregateExpression =>
                 val alias = Alias(ae, ae.toString)()
                 aggregateExpressions += alias
                 alias.toAttribute
-              // Grouping functions are handled in the rule [[ResolveGroupingAnalytics]].
+              // 分组函数在规则中处理[[ResolveGroupingAnalytics]].
               case e: Expression if grouping.exists(_.semanticEquals(e)) &&
                   !ResolveGroupingAnalytics.hasGroupingFunction(e) &&
                   !agg.output.exists(_.semanticEquals(e)) =>
@@ -1630,7 +1628,7 @@ class Analyzer(
                 }
             }
 
-            // Push the aggregate expressions into the aggregate (if any).
+            // 将聚合表达式推送到聚合中（如果有）。
             if (aggregateExpressions.nonEmpty) {
               Project(agg.output,
                 Filter(transformedAggregateFilter,
@@ -1642,17 +1640,16 @@ class Analyzer(
             f
           }
         } catch {
-          // Attempting to resolve in the aggregate can result in ambiguity.  When this happens,
-          // just return the original plan.
+          // 尝试在聚合中解析可能会导致歧义。  
+          // 如果有歧义就返回原始
           case ae: AnalysisException => f
         }
 
       case sort @ Sort(sortOrder, global, aggregate: Aggregate) if aggregate.resolved =>
 
-        // Try resolving the ordering as though it is in the aggregate clause.
+        // 尝试像在aggregate子句中那样解析排序。
         try {
-          // If a sort order is unresolved, containing references not in aggregate, or containing
-          // `AggregateExpression`, we need to push down it to the underlying aggregate operator.
+          // 如果排序顺序未解析、包含不在聚合中的引用或包含“aggregateExpression”，则需要将其下推到基础聚合运算符。
           val unresolvedSortOrders = sortOrder.filter { s =>
             !s.resolved || !s.references.subsetOf(aggregate.outputSet) || containsAggregate(s)
           }
@@ -1664,17 +1661,15 @@ class Analyzer(
           val resolvedAliasedOrdering: Seq[Alias] =
             resolvedAggregate.aggregateExpressions.asInstanceOf[Seq[Alias]]
 
-          // If we pass the analysis check, then the ordering expressions should only reference to
-          // aggregate expressions or grouping expressions, and it's safe to push them down to
-          // Aggregate.
+          // 如果我们通过分析检查，那么排序表达式应该只引用聚合表达式或分组表达式，并且可以安全地将它们下推到聚合。
           checkAnalysis(resolvedAggregate)
 
           val originalAggExprs = aggregate.aggregateExpressions.map(
             CleanupAliases.trimNonTopLevelAliases(_).asInstanceOf[NamedExpression])
 
-          // If the ordering expression is same with original aggregate expression, we don't need
-          // to push down this ordering expression and can reference the original aggregate
-          // expression instead.
+          //如果排序表达式与原始聚合表达式相同，则不需要
+          //下推此排序表达式并可以引用原始聚合
+          //改为表达式。
           val needsPushDown = ArrayBuffer.empty[NamedExpression]
           val evaluatedOrderings = resolvedAliasedOrdering.zip(unresolvedSortOrders).map {
             case (evaluated, order) =>
@@ -1697,8 +1692,8 @@ class Analyzer(
             .toMap
           val finalSortOrders = sortOrder.map(s => sortOrdersMap.getOrElse(new TreeNodeRef(s), s))
 
-          // Since we don't rely on sort.resolved as the stop condition for this rule,
-          // we need to check this and prevent applying this rule multiple times
+          //因为我们不依赖sort.resolved作为此规则的停止条件，
+          //我们需要检查并防止多次应用此规则
           if (sortOrder == finalSortOrders) {
             sort
           } else {
@@ -1707,8 +1702,8 @@ class Analyzer(
                 aggregate.copy(aggregateExpressions = originalAggExprs ++ needsPushDown)))
           }
         } catch {
-          // Attempting to resolve in the aggregate can result in ambiguity.  When this happens,
-          // just return the original plan.
+          //尝试在聚合中解析可能会导致歧义。当这种情况发生时
+          //只需返回原始计划即可。
           case ae: AnalysisException => sort
         }
     }
