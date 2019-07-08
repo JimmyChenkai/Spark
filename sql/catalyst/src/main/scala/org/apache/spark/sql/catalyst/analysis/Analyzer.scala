@@ -1714,21 +1714,21 @@ class Analyzer(
   }
 
   /**
-   * Extracts [[Generator]] from the projectList of a [[Project]] operator and creates [[Generate]]
-   * operator under [[Project]].
+   * 从[[Project]]运算符的项目列表中提取[[Generator]]，并在[[Project]]下创建[[Generate]]运算符。
    *
-   * This rule will throw [[AnalysisException]] for following cases:
-   * 1. [[Generator]] is nested in expressions, e.g. `SELECT explode(list) + 1 FROM tbl`
-   * 2. more than one [[Generator]] is found in projectList,
+   * 以下场景会抛出 [[AnalysisException]] 
+   * 1. [[Generator]] 嵌套表达式, e.g. `SELECT explode(list) + 1 FROM tbl`
+   * 2. 多个[[Generator]] 在项目列表中,
    *    e.g. `SELECT explode(list), explode(list) FROM tbl`
-   * 3. [[Generator]] is found in other operators that are not [[Project]] or [[Generate]],
+   * 3.在 [[Project]] or [[Generate]]中的 [[Generator]]
    *    e.g. `SELECT * FROM tbl SORT BY explode(list)`
    */
   object ExtractGenerator extends Rule[LogicalPlan] {
+    //判断是否存在Generator
     private def hasGenerator(expr: Expression): Boolean = {
       expr.find(_.isInstanceOf[Generator]).isDefined
     }
-
+    //判断是否存在嵌套Generator
     private def hasNestedGenerator(expr: NamedExpression): Boolean = {
       CleanupAliases.trimNonTopLevelAliases(expr) match {
         case UnresolvedAlias(_: Generator, _) => false
@@ -1737,7 +1737,7 @@ class Analyzer(
         case other => hasGenerator(other)
       }
     }
-
+    //给别名去除空格
     private def trimAlias(expr: NamedExpression): Expression = expr match {
       case UnresolvedAlias(child, _) => child
       case Alias(child, _) => child
@@ -1745,10 +1745,10 @@ class Analyzer(
       case _ => expr
     }
 
+    //别名生成器
     private object AliasedGenerator {
       /**
-       * Extracts a [[Generator]] expression, any names assigned by aliases to the outputs
-       * and the outer flag. The outer flag is used when joining the generator output.
+       * 提取一个[[Generator]]表达式，任何由别名分配给输出和外部标志的名称。
        * @param e the [[Expression]]
        * @return (the [[Generator]], seq of output names, outer flag)
        */
@@ -1762,26 +1762,26 @@ class Analyzer(
     }
 
     def apply(plan: LogicalPlan): LogicalPlan = plan.resolveOperatorsUp {
+      //如果是嵌套的生成器就抛出异常
       case Project(projectList, _) if projectList.exists(hasNestedGenerator) =>
         val nestedGenerator = projectList.find(hasNestedGenerator).get
         throw new AnalysisException("Generators are not supported when it's nested in " +
           "expressions, but got: " + toPrettySQL(trimAlias(nestedGenerator)))
-
+      // 判断是否多个生成器，是则抛出异常
       case Project(projectList, _) if projectList.count(hasGenerator) > 1 =>
         val generators = projectList.filter(hasGenerator).map(trimAlias)
         throw new AnalysisException("Only one generator allowed per select clause but found " +
           generators.size + ": " + generators.map(toPrettySQL).mkString(", "))
 
       case p @ Project(projectList, child) =>
-        // Holds the resolved generator, if one exists in the project list.
+        // 保留已解析的生成器（如果项目列表中存在）。
         var resolvedGenerator: Generate = null
 
         val newProjectList = projectList
           .map(CleanupAliases.trimNonTopLevelAliases(_).asInstanceOf[NamedExpression])
           .flatMap {
             case AliasedGenerator(generator, names, outer) if generator.childrenResolved =>
-              // It's a sanity check, this should not happen as the previous case will throw
-              // exception earlier.
+            //这是一个健全性检查，不应该发生这种情况，因为前一个案例将引发前面的异常。
               assert(resolvedGenerator == null, "More than one generator found in SELECT.")
 
               resolvedGenerator =
@@ -1812,13 +1812,11 @@ class Analyzer(
   }
 
   /**
-   * Rewrites table generating expressions that either need one or more of the following in order
-   * to be resolved:
-   *  - concrete attribute references for their output.
+   * 重写表，生成需要以下一个或多个表达式才能解析的表达式：
+   *  - 输出的具体属性引用。
    *  - to be relocated from a SELECT clause (i.e. from  a [[Project]]) into a [[Generate]]).
    *
-   * Names for the output [[Attribute]]s are extracted from [[Alias]] or [[MultiAlias]] expressions
-   * that wrap the [[Generator]].
+   * 输出[[属性]]的名称是从包装[[生成器]]的[[别名]]或[[多别名]]表达式中提取的。
    */
   object ResolveGenerate extends Rule[LogicalPlan] {
     def apply(plan: LogicalPlan): LogicalPlan = plan.resolveOperatorsUp {
@@ -1828,8 +1826,8 @@ class Analyzer(
     }
 
     /**
-     * Construct the output attributes for a [[Generator]], given a list of names.  If the list of
-     * names is empty names are assigned from field names in generator.
+     * 在给定名称列表的情况下，构造[[生成器]]的输出属性。 
+     * 如果名称列表为空，则从生成器中的字段名称分配名称。
      */
     private[analysis] def makeGeneratorOutput(
         generator: Generator,
@@ -1852,28 +1850,23 @@ class Analyzer(
   }
 
   /**
-   * Extracts [[WindowExpression]]s from the projectList of a [[Project]] operator and
-   * aggregateExpressions of an [[Aggregate]] operator and creates individual [[Window]]
-   * operators for every distinct [[WindowSpecDefinition]].
+   * 从[[Project]]运算符的项目列表中提取[[WindowExpression]]s，然后
+   * [Aggregate]]运算符的AggregateExpressions并创建单个的[[Window]]
+   * 每个Distinct的运算符[[WindowsPecDefinition]]。
    *
-   * This rule handles three cases:
-   *  - A [[Project]] having [[WindowExpression]]s in its projectList;
-   *  - An [[Aggregate]] having [[WindowExpression]]s in its aggregateExpressions.
-   *  - A [[Filter]]->[[Aggregate]] pattern representing GROUP BY with a HAVING
-   *    clause and the [[Aggregate]] has [[WindowExpression]]s in its aggregateExpressions.
-   * Note: If there is a GROUP BY clause in the query, aggregations and corresponding
-   * filters (expressions in the HAVING clause) should be evaluated before any
-   * [[WindowExpression]]. If a query has SELECT DISTINCT, the DISTINCT part should be
-   * evaluated after all [[WindowExpression]]s.
+   * 此规则处理三种情况：
+   *  - 在其项目列表中有[[WindowExpression]]s的[[Project]]
+   *  - 在其AggregateExpressions中有[[WindowExpression]]的[[Aggregate]]。
+   *  - 用HAVING子句表示group by的[[filter]]->[[aggregate]]模式在其aggregateExpressions中有[[windowExpression]]s。
+   *    
+   * 注意: 如果查询中有group by子句，则聚合和相应的筛选器（HAVING子句中的表达式）应在任何[[WindowExpression]]之前进行计算。
+   * 如果查询选择了distinct，则应在所有[[windowexpression]]s之后计算distinct部分。
    *
-   * For every case, the transformation works as follows:
-   * 1. For a list of [[Expression]]s (a projectList or an aggregateExpressions), partitions
-   *    it two lists of [[Expression]]s, one for all [[WindowExpression]]s and another for
-   *    all regular expressions.
-   * 2. For all [[WindowExpression]]s, groups them based on their [[WindowSpecDefinition]]s
-   *    and [[WindowFunctionType]]s.
-   * 3. For every distinct [[WindowSpecDefinition]] and [[WindowFunctionType]], creates a
-   *    [[Window]] operator and inserts it into the plan tree.
+   * 对于每种情况，转换的工作方式如下：
+   * 1.对于一个[[Expression]]s列表（项目列表或聚合表达式），将它分为两个[[Expression]]s列表，
+   * 一个用于所有[[WindowExpression]]s，另一个用于所有正则表达式。      
+   * 2. 对于所有的[[WindowExpression]]s，根据它们的[[WindowsPecDefinition]]s和[[WindowFunctionType]]s对它们进行分组。
+   * 3. 对于每个不同的[[WindowsPecDefinition]]和[[WindowFunctionType]]，创建一个[[Window]]运算符并将其插入到计划树中。
    */
   object ExtractWindowExpressions extends Rule[LogicalPlan] {
     private def hasWindowFunction(exprs: Seq[Expression]): Boolean =
@@ -1887,63 +1880,59 @@ class Analyzer(
     }
 
     /**
-     * From a Seq of [[NamedExpression]]s, extract expressions containing window expressions and
-     * other regular expressions that do not contain any window expression. For example, for
-     * `col1, Sum(col2 + col3) OVER (PARTITION BY col4 ORDER BY col5)`, we will extract
-     * `col1`, `col2 + col3`, `col4`, and `col5` out and replace their appearances in
-     * the window expression as attribute references. So, the first returned value will be
-     * `[Sum(_w0) OVER (PARTITION BY _w1 ORDER BY _w2)]` and the second returned value will be
-     * [col1, col2 + col3 as _w0, col4 as _w1, col5 as _w2].
+     * 从[[名称表达式]]s的序列中，提取包含窗口表达式和
+     * 其他不包含任何窗口表达式的正则表达式。例如，对于
+     * `col1，sum（col2+col3）over（paration by col4 order by col5）`，我们将提取
+     * `col1`、`col2+col3`、`col4`、`col5`退出并替换它们在
+     * 作为属性引用的窗口表达式。因此，第一个返回值将是
+     * `[sum（_w0）over（partition by _w1 order by _w2）]`第二个返回值为
+     * [第1列，第2列+第3列，第0列，第4列，第1列，第5列，第2列]。
      *
      * @return (seq of expressions containing at least one window expression,
      *          seq of non-window expressions)
      */
     private def extract(
         expressions: Seq[NamedExpression]): (Seq[NamedExpression], Seq[NamedExpression]) = {
-      // First, we partition the input expressions to two part. For the first part,
-      // every expression in it contain at least one WindowExpression.
-      // Expressions in the second part do not have any WindowExpression.
+      // 首先，我们将输入表达式分为两部分。第一部分，
+      // 其中的每个表达式至少包含一个WindowExpression。
+      // 第二部分中的表达式没有任何WindowExpression。
       val (expressionsWithWindowFunctions, regularExpressions) =
         expressions.partition(hasWindowFunction)
 
-      // Then, we need to extract those regular expressions used in the WindowExpression.
-      // For example, when we have col1 - Sum(col2 + col3) OVER (PARTITION BY col4 ORDER BY col5),
-      // we need to make sure that col1 to col5 are all projected from the child of the Window
-      // operator.
+      // 然后，我们需要提取WindowExpression中使用的那些正则表达式。
+      // 例如，当我们将col1-sum（col2+col3）置于（按col4排序，按col5排序）之上时，
+      // 我们需要确保col1到col5都是从窗口的子级投影的运算符。   
       val extractedExprBuffer = new ArrayBuffer[NamedExpression]()
       def extractExpr(expr: Expression): Expression = expr match {
         case ne: NamedExpression =>
-          // If a named expression is not in regularExpressions, add it to
-          // extractedExprBuffer and replace it with an AttributeReference.
+          // 如果命名表达式不在正则表达式中，请将其添加到
+          // 提取exprbuffer并用attributereference替换它。
           val missingExpr =
             AttributeSet(Seq(expr)) -- (regularExpressions ++ extractedExprBuffer)
           if (missingExpr.nonEmpty) {
             extractedExprBuffer += ne
           }
-          // alias will be cleaned in the rule CleanupAliases
+          // 别名将在规则cleanupAlias中清除
           ne
         case e: Expression if e.foldable =>
-          e // No need to create an attribute reference if it will be evaluated as a Literal.
+          e // 如果属性引用将作为文本进行计算，则无需创建它。
         case e: Expression =>
-          // For other expressions, we extract it and replace it with an AttributeReference (with
-          // an internal column name, e.g. "_w0").
+          // 对于其他表达式，我们提取它并将其替换为attributereference（使用内部列名，例如“w0”）。
           val withName = Alias(e, s"_w${extractedExprBuffer.length}")()
           extractedExprBuffer += withName
           withName.toAttribute
       }
 
-      // Now, we extract regular expressions from expressionsWithWindowFunctions
-      // by using extractExpr.
+      // 现在，我们使用extractexpr从带有WindowFunctions的表达式中提取正则表达式。
       val seenWindowAggregates = new ArrayBuffer[AggregateExpression]
       val newExpressionsWithWindowFunctions = expressionsWithWindowFunctions.map {
         _.transform {
-          // Extracts children expressions of a WindowFunction (input parameters of
-          // a WindowFunction).
+          // 提取WindowFunction的子表达式（WindowFunction的输入参数）。
           case wf: WindowFunction =>
             val newChildren = wf.children.map(extractExpr)
             wf.withNewChildren(newChildren)
 
-          // Extracts expressions from the partition spec and order spec.
+          // 从分区规范和顺序规范中提取表达式。
           case wsc @ WindowSpecDefinition(partitionSpec, orderSpec, _) =>
             val newPartitionSpec = partitionSpec.map(extractExpr)
             val newOrderSpec = orderSpec.map { so =>
@@ -1952,7 +1941,7 @@ class Analyzer(
             }
             wsc.copy(partitionSpec = newPartitionSpec, orderSpec = newOrderSpec)
 
-          // Extract Windowed AggregateExpression
+          // 提取窗口聚合表达式
           case we @ WindowExpression(
               ae @ AggregateExpression(function, _, _, _),
               spec: WindowSpecDefinition) =>
@@ -1966,69 +1955,66 @@ class Analyzer(
             failAnalysis("It is not allowed to use a window function inside an aggregate " +
               "function. Please use the inner window function in a sub-query.")
 
-          // Extracts AggregateExpression. For example, for SUM(x) - Sum(y) OVER (...),
-          // we need to extract SUM(x).
+          // 提取AggregateExpression。例如，对于（…）上的sum（x）-sum（y），我们需要提取sum（x）。
           case agg: AggregateExpression if !seenWindowAggregates.contains(agg) =>
             val withName = Alias(agg, s"_w${extractedExprBuffer.length}")()
             extractedExprBuffer += withName
             withName.toAttribute
 
-          // Extracts other attributes
+          // 提取其他属性
           case attr: Attribute => extractExpr(attr)
 
         }.asInstanceOf[NamedExpression]
       }
 
       (newExpressionsWithWindowFunctions, regularExpressions ++ extractedExprBuffer)
-    } // end of extract
+    } /
 
     /**
-     * Adds operators for Window Expressions. Every Window operator handles a single Window Spec.
+     * 为窗口表达式添加运算符。每个窗口操作员处理一个窗口规范。
      */
     private def addWindow(
         expressionsWithWindowFunctions: Seq[NamedExpression],
         child: LogicalPlan): LogicalPlan = {
-      // First, we need to extract all WindowExpressions from expressionsWithWindowFunctions
-      // and put those extracted WindowExpressions to extractedWindowExprBuffer.
-      // This step is needed because it is possible that an expression contains multiple
-      // WindowExpressions with different Window Specs.
-      // After extracting WindowExpressions, we need to construct a project list to generate
-      // expressionsWithWindowFunctions based on extractedWindowExprBuffer.
-      // For example, for "sum(a) over (...) / sum(b) over (...)", we will first extract
-      // "sum(a) over (...)" and "sum(b) over (...)" out, and assign "_we0" as the alias to
-      // "sum(a) over (...)" and "_we1" as the alias to "sum(b) over (...)".
-      // Then, the projectList will be [_we0/_we1].
+      // 首先，我们需要从带有WindowFunctions的表达式中提取所有WindowExpressions
+      // 并将这些提取的WindowExpressions放入ExtractedWindowExprBuffer。
+      // 此步骤是必需的，因为表达式可能包含多个
+      // 具有不同窗口规格的WindowExpressions。
+      // 提取WindowExpressions后，需要构造一个项目列表来生成
+      // 基于ExtractedWindowExprBuffer的ExpressionsWithWindowFunctions。
+      // 例如，对于“sum（a）over（…）/sum（b）over（…）”，我们将首先提取
+      // “sum（a）over（…）”和“sum（b）over（…）”输出，并将“we0”作为别名分配给
+      // “sum（a）over（…）”和“we1”作为“sum（b）over（…）”的别名。
+      // 然后，项目列表将是[_we0/_we1]。
       val extractedWindowExprBuffer = new ArrayBuffer[NamedExpression]()
       val newExpressionsWithWindowFunctions = expressionsWithWindowFunctions.map {
-        // We need to use transformDown because we want to trigger
-        // "case alias @ Alias(window: WindowExpression, _)" first.
+        // 我们需要使用TransformDown，因为我们想触发
+        // “case alias@alias（window:windowexpression，）”首先。
         _.transformDown {
           case alias @ Alias(window: WindowExpression, _) =>
-            // If a WindowExpression has an assigned alias, just use it.
+            // 如果一个WindowExpression有一个指定的别名，只需使用它。
             extractedWindowExprBuffer += alias
             alias.toAttribute
           case window: WindowExpression =>
-            // If there is no alias assigned to the WindowExpressions. We create an
-            // internal column.
+            // 如果没有为WindowExpressions分配别名。我们创建一个内部列。
             val withName = Alias(window, s"_we${extractedWindowExprBuffer.length}")()
             extractedWindowExprBuffer += withName
             withName.toAttribute
         }.asInstanceOf[NamedExpression]
       }
 
-      // Second, we group extractedWindowExprBuffer based on their Partition and Order Specs.
+      // 其次，我们根据其分区和顺序规范对ExtractedWindowExprBuffer进行分组。
       val groupedWindowExpressions = extractedWindowExprBuffer.groupBy { expr =>
         val distinctWindowSpec = expr.collect {
           case window: WindowExpression => window.windowSpec
         }.distinct
 
-        // We do a final check and see if we only have a single Window Spec defined in an
-        // expressions.
+        // 我们做最后检查，看看是否只有一个在表达式中定义的窗口规范
         if (distinctWindowSpec.isEmpty) {
           failAnalysis(s"$expr does not have any WindowExpression.")
         } else if (distinctWindowSpec.length > 1) {
-          // newExpressionsWithWindowFunctions only have expressions with a single
-          // WindowExpression. If we reach here, we have a bug.
+          // newExpressionsWithWindowFunctions只有一个表达式
+          // 窗口表达式。如果我们到了这里，bug
           failAnalysis(s"$expr has multiple Window Specifications ($distinctWindowSpec)." +
             s"Please file a bug report with this error message, stack trace, and the query.")
         } else {
@@ -2037,79 +2023,74 @@ class Analyzer(
         }
       }.toSeq
 
-      // Third, we aggregate them by adding each Window operator for each Window Spec and then
-      // setting this to the child of the next Window operator.
+      // 第三，我们通过为每个窗口规范添加每个窗口运算符来聚合它们，然后
+      // 将此设置为下一个窗口运算符的子级。
       val windowOps =
         groupedWindowExpressions.foldLeft(child) {
           case (last, ((partitionSpec, orderSpec, _), windowExpressions)) =>
             Window(windowExpressions, partitionSpec, orderSpec, last)
         }
 
-      // Finally, we create a Project to output windowOps's output
-      // newExpressionsWithWindowFunctions.
+      // 最后，我们创建一个项目来输出WindowOps的输出newExpressionsWithWindowFunctions。
       Project(windowOps.output ++ newExpressionsWithWindowFunctions, windowOps)
     } // end of addWindow
 
-    // We have to use transformDown at here to make sure the rule of
-    // "Aggregate with Having clause" will be triggered.
+    // 我们必须在这里使用transformdown来确保将触发“Aggregate with Having子句”。
     def apply(plan: LogicalPlan): LogicalPlan = plan resolveOperatorsDown {
 
       case Filter(condition, _) if hasWindowFunction(condition) =>
         failAnalysis("It is not allowed to use window functions inside WHERE and HAVING clauses")
 
-      // Aggregate with Having clause. This rule works with an unresolved Aggregate because
-      // a resolved Aggregate will not have Window Functions.
+      // 用HAVING子句聚合。此规则适用于未解析的聚合，因为解析的聚合将不具有窗口函数。
       case f @ Filter(condition, a @ Aggregate(groupingExprs, aggregateExprs, child))
         if child.resolved &&
            hasWindowFunction(aggregateExprs) &&
            a.expressions.forall(_.resolved) =>
         val (windowExpressions, aggregateExpressions) = extract(aggregateExprs)
-        // Create an Aggregate operator to evaluate aggregation functions.
+        // 创建聚合运算符以评估聚合函数。
         val withAggregate = Aggregate(groupingExprs, aggregateExpressions, child)
-        // Add a Filter operator for conditions in the Having clause.
+        // 为HAVING子句中的条件添加筛选器运算符。
         val withFilter = Filter(condition, withAggregate)
         val withWindow = addWindow(windowExpressions, withFilter)
 
-        // Finally, generate output columns according to the original projectList.
+        // 最后，根据原始项目列表生成输出列。
         val finalProjectList = aggregateExprs.map(_.toAttribute)
         Project(finalProjectList, withWindow)
 
       case p: LogicalPlan if !p.childrenResolved => p
 
-      // Aggregate without Having clause.
+      // 无条件聚合。
       case a @ Aggregate(groupingExprs, aggregateExprs, child)
         if hasWindowFunction(aggregateExprs) &&
            a.expressions.forall(_.resolved) =>
         val (windowExpressions, aggregateExpressions) = extract(aggregateExprs)
-        // Create an Aggregate operator to evaluate aggregation functions.
+        // 创建聚合运算符以评估聚合函数。
         val withAggregate = Aggregate(groupingExprs, aggregateExpressions, child)
-        // Add Window operators.
+        // 添加窗口运算符。
         val withWindow = addWindow(windowExpressions, withAggregate)
 
-        // Finally, generate output columns according to the original projectList.
+        // 最后，根据原始项目列表生成输出列。
         val finalProjectList = aggregateExprs.map(_.toAttribute)
         Project(finalProjectList, withWindow)
 
-      // We only extract Window Expressions after all expressions of the Project
-      // have been resolved.
+      // 我们只在解析了项目的所有表达式之后提取窗口表达式。
       case p @ Project(projectList, child)
         if hasWindowFunction(projectList) && !p.expressions.exists(!_.resolved) =>
         val (windowExpressions, regularExpressions) = extract(projectList)
-        // We add a project to get all needed expressions for window expressions from the child
-        // of the original Project operator.
+        // 我们添加一个项目，从原始项目运算符的子级获取窗口表达式所需的所有表达式。
         val withProject = Project(regularExpressions, child)
-        // Add Window operators.
+        // 添加窗口运算符。
         val withWindow = addWindow(windowExpressions, withProject)
 
-        // Finally, generate output columns according to the original projectList.
+        // 最后，根据原始项目列表生成输出列。
         val finalProjectList = projectList.map(_.toAttribute)
         Project(finalProjectList, withWindow)
     }
   }
 
   /**
-   * Pulls out nondeterministic expressions from LogicalPlan which is not Project or Filter,
-   * put them into an inner Project and finally project them away at the outer Project.
+   * 从不是项目或筛选器的LogicalPlan中提取非确定性表达式，
+   * 把它们放到一个内部项目中，最后把它们放到外部项目中。
    */
   object PullOutNondeterministic extends Rule[LogicalPlan] {
     override def apply(plan: LogicalPlan): LogicalPlan = plan.resolveOperatorsUp {
@@ -2124,9 +2105,7 @@ class Analyzer(
           nondeterToAttr.get(e).map(_.toAttribute).getOrElse(e)
         }.copy(child = newChild)
 
-      // todo: It's hard to write a general rule to pull out nondeterministic expressions
-      // from LogicalPlan, currently we only do it for UnaryNode which has same output
-      // schema with its child.
+      // todo: 从logicalplan中提取非确定性表达式很难编写一般规则，目前我们只针对一元节点，它的输出模式与其子节点相同。
       case p: UnaryNode if p.output == p.child.output && p.expressions.exists(!_.deterministic) =>
         val nondeterToAttr = getNondeterToAttr(p.expressions)
         val newPlan = p.transformExpressions { case e =>
@@ -2151,7 +2130,7 @@ class Analyzer(
   }
 
   /**
-   * Set the seed for random number generation.
+   * 为随机数生成设置种子。
    */
   object ResolveRandomSeed extends Rule[LogicalPlan] {
     private lazy val random = new Random()
@@ -2166,10 +2145,9 @@ class Analyzer(
   }
 
   /**
-   * Correctly handle null primitive inputs for UDF by adding extra [[If]] expression to do the
-   * null check.  When user defines a UDF with primitive parameters, there is no way to tell if the
-   * primitive parameter is null or not, so here we assume the primitive input is null-propagatable
-   * and we should return null if the input is null.
+   * 通过添加额外的[[if]]表达式来正确处理UDF的空基元输入空检查。
+   * 当用户使用基元参数定义一个UDF时，无法判断基元参数是否为空，因此我们假设基元输入为空可传播
+   * 如果输入为空，我们应该返回空值。
    */
   object HandleNullInputsForUDF extends Rule[LogicalPlan] {
     override def apply(plan: LogicalPlan): LogicalPlan = plan.resolveOperatorsUp {
@@ -2179,8 +2157,7 @@ class Analyzer(
 
         case udf @ ScalaUDF(_, _, inputs, inputPrimitives, _, _, _, _)
             if inputPrimitives.contains(true) =>
-          // Otherwise, add special handling of null for fields that can't accept null.
-          // The result of operations like this, when passed null, is generally to return null.
+          //否则，为不能接受空值的字段添加对空值的特殊处理。这样的操作，当传递空值时，通常返回空值。
           assert(inputPrimitives.length == inputs.length)
 
           val inputPrimitivesPair = inputPrimitives.zip(inputs)
@@ -2190,10 +2167,9 @@ class Analyzer(
           }.reduceLeftOption[Expression](Or)
 
           if (inputNullCheck.isDefined) {
-            // Once we add an `If` check above the udf, it is safe to mark those checked inputs
-            // as null-safe (i.e., wrap with `KnownNotNull`), because the null-returning
-            // branch of `If` will be called if any of these checked inputs is null. Thus we can
-            // prevent this rule from being applied repeatedly.
+           // 一旦我们在UDF上面添加了一个“if”检查，就可以安全地标记那些检查过的输入作为空安全（即，用“knownnotnull”换行），
+            // 因为空返回如果这些检查的输入中的任何一个为空，则将调用'if'分支。
+            // 这样我们就可以防止重复应用此规则。
             val newInputs = inputPrimitivesPair.map {
               case (isPrimitive, input) =>
                 if (isPrimitive && input.nullable) {
@@ -2212,7 +2188,7 @@ class Analyzer(
   }
 
   /**
-   * Check and add proper window frames for all window functions.
+   * 检查并为所有窗口功能添加适当的窗框。
    */
   object ResolveWindowFrame extends Rule[LogicalPlan] {
     def apply(plan: LogicalPlan): LogicalPlan = plan resolveExpressions {
@@ -2234,7 +2210,7 @@ class Analyzer(
   }
 
   /**
-   * Check and add order to [[AggregateWindowFunction]]s.
+   * 检查并将序列添加到[[AggregateWindowFunction]]s。
    */
   object ResolveWindowOrder extends Rule[LogicalPlan] {
     def apply(plan: LogicalPlan): LogicalPlan = plan resolveExpressions {
