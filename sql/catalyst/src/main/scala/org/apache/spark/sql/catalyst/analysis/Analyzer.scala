@@ -2225,8 +2225,8 @@ class Analyzer(
   }
 
   /**
-   * Removes natural or using joins by calculating output columns based on output from two sides,
-   * Then apply a Project on a normal Join to eliminate natural or using join.
+   * 通过基于两侧的输出计算输出列来删除自然联接或使用联接，
+   * 然后在正常联接上应用项目以消除自然联接或使用联接。
    */
   object ResolveNaturalAndUsingJoin extends Rule[LogicalPlan] {
     override def apply(plan: LogicalPlan): LogicalPlan = plan.resolveOperatorsUp {
@@ -2235,19 +2235,19 @@ class Analyzer(
         commonNaturalJoinProcessing(left, right, joinType, usingCols, None, hint)
       case j @ Join(left, right, NaturalJoin(joinType), condition, hint)
           if j.resolvedExceptNatural =>
-        // find common column names from both sides
+        // 从两边查找公用列名
         val joinNames = left.output.map(_.name).intersect(right.output.map(_.name))
         commonNaturalJoinProcessing(left, right, joinType, joinNames, condition, hint)
     }
   }
 
   /**
-   * Resolves columns of an output table from the data in a logical plan. This rule will:
+   * 从逻辑计划中的数据解析输出表的列。 
    *
-   * - Reorder columns when the write is by name
-   * - Insert safe casts when data types do not match
-   * - Insert aliases when column names do not match
-   * - Detect plans that are not compatible with the output table and throw AnalysisException
+   * - 按名称写入时重新排序列
+   * - 数据类型不匹配时插入安全强制转换
+   * - 当列名不匹配时插入别名
+   * - 检测与输出表不兼容的计划并引发AnalysisException
    */
   object ResolveOutputRelation extends Rule[LogicalPlan] {
     override def apply(plan: LogicalPlan): LogicalPlan = plan.resolveOperators {
@@ -2409,11 +2409,12 @@ class Analyzer(
   }
 
   /**
-   * Replaces [[UnresolvedDeserializer]] with the deserialization expression that has been resolved
-   * to the given input attributes.
+   * 
+   * 用已解析为给定输入属性的反序列化表达式替换[[UnsolvedDeserializer]]。
    */
   object ResolveDeserializer extends Rule[LogicalPlan] {
     def apply(plan: LogicalPlan): LogicalPlan = plan.resolveOperatorsUp {
+      //如果子节点没解析
       case p if !p.childrenResolved => p
       case p if p.resolved => p
 
@@ -2504,8 +2505,7 @@ class Analyzer(
   }
 
   /**
-   * Resolves [[NewInstance]] by finding and adding the outer scope to it if the object being
-   * constructed is an inner class.
+   * 如果正在构造的对象是内部类，则通过查找外部作用域并向其添加外部作用域来解析[[newInstance]。
    */
   object ResolveNewInstance extends Rule[LogicalPlan] {
     def apply(plan: LogicalPlan): LogicalPlan = plan.resolveOperatorsUp {
@@ -2527,7 +2527,7 @@ class Analyzer(
   }
 
   /**
-   * Replace the [[UpCast]] expression by [[Cast]], and throw exceptions if the cast may truncate.
+   * 将[[UpCast]]表达式替换为[[Cast]]，并在强制转换可能截断时引发异常。
    */
   object ResolveUpCast extends Rule[LogicalPlan] {
     private def fail(from: Expression, to: DataType, walkedTypePath: Seq[String]) = {
@@ -2535,6 +2535,7 @@ class Analyzer(
         case l: LambdaVariable => "array element"
         case e => e.sql
       }
+      //并在强制转换可能截断时引发异常。
       throw new AnalysisException(s"Cannot up cast $fromStr from " +
         s"${from.dataType.catalogString} to ${to.catalogString}.\n" +
         "The type path of the target object is:\n" + walkedTypePath.mkString("", "\n", "\n") +
@@ -2577,7 +2578,7 @@ object EliminateSubqueryAliases extends Rule[LogicalPlan] {
 }
 
 /**
- * Removes [[Union]] operators from the plan if it just has one child.
+ * 如果计划只有一个子级，则从该计划中删除[[Union]]运算符。
  */
 object EliminateUnions extends Rule[LogicalPlan] {
   def apply(plan: LogicalPlan): LogicalPlan = plan resolveOperators {
@@ -2586,11 +2587,10 @@ object EliminateUnions extends Rule[LogicalPlan] {
 }
 
 /**
- * Cleans up unnecessary Aliases inside the plan. Basically we only need Alias as a top level
- * expression in Project(project list) or Aggregate(aggregate expressions) or
- * Window(window expressions). Notice that if an expression has other expression parameters which
- * are not in its `children`, e.g. `RuntimeReplaceable`, the transformation for Aliases in this
- * rule can't work for those parameters.
+ * 清除计划中不必要的别名。
+ * 基本上，我们只需要别名作为项目（项目列表）或聚合（聚合表达式）或窗口（窗口表达式）中的顶级表达式。
+ * 注意，如果表达式的其他表达式参数不在其“children”中，
+ * 例如. `RuntimeReplaceable`, 此规则中别名的转换无法用于这些参数。
  */
 object CleanupAliases extends Rule[LogicalPlan] {
   private def trimAliases(e: Expression): Expression = {
@@ -2599,7 +2599,7 @@ object CleanupAliases extends Rule[LogicalPlan] {
       case MultiAlias(child, _) => child
     }
   }
-
+  // 去除别名空格
   def trimNonTopLevelAliases(e: Expression): Expression = e match {
     case a: Alias =>
       a.copy(child = trimAliases(a.child))(
@@ -2641,8 +2641,8 @@ object CleanupAliases extends Rule[LogicalPlan] {
 }
 
 /**
- * Ignore event time watermark in batch query, which is only supported in Structured Streaming.
- * TODO: add this rule into analyzer rule list.
+ * 批查询中忽略事件时间水印，这仅在结构化流中受支持。
+ * TODO: 将此规则添加到分析器规则列表中。
  */
 object EliminateEventTimeWatermark extends Rule[LogicalPlan] {
   override def apply(plan: LogicalPlan): LogicalPlan = plan resolveOperators {
@@ -2651,9 +2651,9 @@ object EliminateEventTimeWatermark extends Rule[LogicalPlan] {
 }
 
 /**
- * Maps a time column to multiple time windows using the Expand operator. Since it's non-trivial to
- * figure out how many windows a time column can map to, we over-estimate the number of windows and
- * filter out the rows where the time column is not inside the time window.
+ * 使用Expand运算符将时间列映射到多个时间窗口。 
+ * 由于计算一个时间列可以映射到多少个窗口是非常重要的，
+ * 因此我们过度估计了窗口的数量，并筛选出时间列不在时间窗口内的行。
  */
 object TimeWindowing extends Rule[LogicalPlan] {
   import org.apache.spark.sql.catalyst.dsl.expressions._
@@ -2663,14 +2663,13 @@ object TimeWindowing extends Rule[LogicalPlan] {
   private final val WINDOW_END = "end"
 
   /**
-   * Generates the logical plan for generating window ranges on a timestamp column. Without
-   * knowing what the timestamp value is, it's non-trivial to figure out deterministically how many
-   * window ranges a timestamp will map to given all possible combinations of a window duration,
-   * slide duration and start time (offset). Therefore, we express and over-estimate the number of
-   * windows there may be, and filter the valid windows. We use last Project operator to group
-   * the window columns into a struct so they can be accessed as `window.start` and `window.end`.
+   * 为在时间戳列上生成窗口范围生成逻辑计划。
+   * 在不知道时间戳值是什么的情况下，确定地计算时间戳将映射到多少窗口范围是非常重要的
+   * 因为给定了窗口持续时间、幻灯片持续时间和开始时间（偏移）的所有可能组合。
+   * 因此，我们表示并过度估计可能存在的窗口数，并过滤有效的窗口。
+   * 我们使用上一个Project运算符将窗口列分组为一个结构，以便可以将它们作为“window.start”和“window.end”访问。
    *
-   * The windows are calculated as below:
+   * 窗口计算如下：
    * maxNumOverlapping <- ceil(windowDuration / slideDuration)
    * for (i <- 0 until maxNumOverlapping)
    *   windowId <- ceil((timestamp - startTime) / slideDuration)
@@ -2678,8 +2677,8 @@ object TimeWindowing extends Rule[LogicalPlan] {
    *   windowEnd <- windowStart + windowDuration
    *   return windowStart, windowEnd
    *
-   * This behaves as follows for the given parameters for the time: 12:05. The valid windows are
-   * marked with a +, and invalid ones are marked with a x. The invalid ones are filtered using the
+   * 对于给定的时间参数，其行为如下：12:05。
+   * 有效窗口用A+标记，无效窗口用X标记。使用筛选无效窗口。
    * Filter operator.
    * window: 12m, slide: 5m, start: 0m :: window: 12m, slide: 5m, start: 2m
    *     11:55 - 12:07 +                      11:52 - 12:04 x
@@ -2775,7 +2774,7 @@ object TimeWindowing extends Rule[LogicalPlan] {
 }
 
 /**
- * Resolve a [[CreateNamedStruct]] if it contains [[NamePlaceholder]]s.
+ * 如果包含[[nameplaceholder]]s，请解析[[createnamedstruct]]。
  */
 object ResolveCreateNamedStruct extends Rule[LogicalPlan] {
   override def apply(plan: LogicalPlan): LogicalPlan = plan.resolveExpressions {
@@ -2791,9 +2790,9 @@ object ResolveCreateNamedStruct extends Rule[LogicalPlan] {
 }
 
 /**
- * The aggregate expressions from subquery referencing outer query block are pushed
- * down to the outer query block for evaluation. This rule below updates such outer references
- * as AttributeReference referring attributes from the parent/outer query block.
+ * 引用外部查询块的子查询的聚合表达式被下推到外部查询块进行计算。
+ * 下面的规则更新诸如attributereference之类的外部引用，
+ * 这些外部引用引用来自父/外部查询块的属性。
  *
  * For example (SQL):
  * {{{
