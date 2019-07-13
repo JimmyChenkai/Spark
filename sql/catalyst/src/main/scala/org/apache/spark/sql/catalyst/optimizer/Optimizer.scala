@@ -32,16 +32,16 @@ import org.apache.spark.sql.types._
 import org.apache.spark.util.Utils
 
 /**
- * Abstract class all optimizers should inherit of, contains the standard batches (extending
- * Optimizers can override this.
+ * 所有优化器都需要继承Optimizer类
+ * 但是拓展优化类是可以重写覆盖
  */
 abstract class Optimizer(sessionCatalog: SessionCatalog)
   extends RuleExecutor[LogicalPlan] {
 
-  // Check for structural integrity of the plan in test mode.
-  // Currently we check after the execution of each rule if a plan:
-  // - is still resolved
-  // - only host special expressions in supported operators
+  // 
+  // 在测试模式下检查计划的结构完整性。目前，我们在执行每个规则后检查计划是否：
+  // - 仍然解决
+  // - 仅在受支持的运算符中承载特殊表达式
   override protected def isPlanIntegral(plan: LogicalPlan): Boolean = {
     !Utils.isTesting || (plan.resolved &&
       plan.find(PlanHelper.specialExpressionsInUnsupportedOperator(_).nonEmpty).isEmpty)
