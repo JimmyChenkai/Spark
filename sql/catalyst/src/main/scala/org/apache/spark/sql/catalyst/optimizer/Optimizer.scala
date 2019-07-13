@@ -482,17 +482,17 @@ object LimitPushDown extends Rule[LogicalPlan] {
 }
 
 /**
- * Pushes Project operator to both sides of a Union operator.
- * Operations that are safe to pushdown are listed as follows.
+ * 将项目运算符推送到联合运算符的两侧。
+ * 可安全下推的操作如下所示。
  * Union:
- * Right now, Union means UNION ALL, which does not de-duplicate rows. So, it is
- * safe to pushdown Filters and Projections through it. Filter pushdown is handled by another
- * rule PushDownPredicate. Once we add UNION DISTINCT, we will not be able to pushdown Projections.
+ * 现在，union意味着union all，它不会消除重复的行。 
+ * 因此，通过它向下推过滤器和投影是安全的。 过滤器下推由另一个规则下推谓词处理。
+ * 一旦我们添加了union distinct，我们就无法向下推预测。
  */
 object PushProjectionThroughUnion extends Rule[LogicalPlan] with PredicateHelper {
 
   /**
-   * Maps Attributes from the left side to the corresponding Attribute on the right side.
+   * 将属性从左侧映射到右侧的相应属性。
    */
   private def buildRewrites(left: LogicalPlan, right: LogicalPlan): AttributeMap[Attribute] = {
     assert(left.output.size == right.output.size)
@@ -500,27 +500,27 @@ object PushProjectionThroughUnion extends Rule[LogicalPlan] with PredicateHelper
   }
 
   /**
-   * Rewrites an expression so that it can be pushed to the right side of a
-   * Union or Except operator. This method relies on the fact that the output attributes
-   * of a union/intersect/except are always equal to the left child's output.
+   * 重写表达式，以便将其推送到union或except运算符的右侧。
+   * 此方法依赖这样一个事实：
+   * union/intersect/except的输出属性始终等于左子级的输出。
    */
   private def pushToRight[A <: Expression](e: A, rewrites: AttributeMap[Attribute]) = {
     val result = e transform {
       case a: Attribute => rewrites(a)
     } match {
-      // Make sure exprId is unique in each child of Union.
+      // 确保exprid在union的每个子级中都是唯一的。
       case Alias(child, alias) => Alias(child, alias)()
       case other => other
     }
 
-    // We must promise the compiler that we did not discard the names in the case of project
-    // expressions.  This is safe since the only transformation is from Attribute => Attribute.
+    // 我们必须向编译器保证，在项目表达式的情况下，不会丢弃名称。
+    // 这是安全的，因为唯一的转换是from attribute=>attribute。
     result.asInstanceOf[A]
   }
 
   def apply(plan: LogicalPlan): LogicalPlan = plan transform {
 
-    // Push down deterministic projection through UNION ALL
+    // 通过union all向下推确定性投影
     case p @ Project(projectList, Union(children)) =>
       assert(children.nonEmpty)
       if (projectList.forall(_.deterministic)) {
@@ -1192,39 +1192,43 @@ object PushDownPredicate extends Rule[LogicalPlan] with PredicateHelper {
 }
 
 /**
- * Pushes down [[Filter]] operators where the `condition` can be
- * evaluated using only the attributes of the left or right side of a join.  Other
- * [[Filter]] conditions are moved into the `condition` of the [[Join]].
+ * 下推[[filter]]运算符，其中“condition”只能使用联接左侧或右侧的属性进行计算。
+ * 其他的[[filter]]条件被移动到[[Join]]的“condition”中。
+ * 并向下推联接筛选器，在该筛选器中，可以仅使用子查询左侧或右侧的属性（如果适用）来计算“condition”。
+ * 
  *
- * And also pushes down the join filter, where the `condition` can be evaluated using only the
- * attributes of the left or right side of sub query when applicable.
- *
- * Check https://cwiki.apache.org/confluence/display/Hive/OuterJoinBehavior for more details
+ * 更多细节 ： https://cwiki.apache.org/confluence/display/Hive/OuterJoinBehavior 
  */
 object PushPredicateThroughJoin extends Rule[LogicalPlan] with PredicateHelper {
   /**
-   * Splits join condition expressions or filter predicates (on a given join's output) into three
-   * categories based on the attributes required to evaluate them. Note that we explicitly exclude
-   * non-deterministic (i.e., stateful) condition expressions in canEvaluateInLeft or
-   * canEvaluateInRight to prevent pushing these predicates on either side of the join.
+   * 将联接条件表达式或筛选谓词（在给定联接的输出上）拆分为三个基于评估所需属性的类别。
+   * 注意，我们明确排除canEvaluateInLeft或CanEvaluateInRight以防止在联接的任一侧推送这些谓词。
    *
-   * @return (canEvaluateInLeft, canEvaluateInRight, haveToEvaluateInBoth)
    */
   private def split(condition: Seq[Expression], left: LogicalPlan, right: LogicalPlan) = {
     val (pushDownCandidates, nonDeterministic) = condition.partition(_.deterministic)
+    //T1: a,b,c T2: d,e  
+    //select * from T1 join T2 on T1.a = T2.b where T1.b > 3 and T2.e > 4
     val (leftEvaluateCondition, rest) =
       pushDownCandidates.partition(_.references.subsetOf(left.outputSet))
+    //和左孩子有关系的谓词：T1.b > 3
     val (rightEvaluateCondition, commonCondition) =
         rest.partition(expr => expr.references.subsetOf(right.outputSet))
+      //和右孩子有关系的谓词：T2.e > 4
 
     (leftEvaluateCondition, rightEvaluateCondition, commonCondition ++ nonDeterministic)
+     //commonCondition是等于吗？这个commonCondition中是不是会经常没有值，
+     //当where中有"="条件的时候，commonCondition会有值
   }
 
   def apply(plan: LogicalPlan): LogicalPlan = plan transform {
     // push the where condition down into join filter
+    // select * from T1 join T2 on T1.a = T2.b where T1.b > 3 and T2.e > 4
+    // 以上这个查询，filter是T1.b > 3 and T2.e > 4
     case f @ Filter(filterCondition, Join(left, right, joinType, joinCondition, hint)) =>
       val (leftFilterConditions, rightFilterConditions, commonFilterCondition) =
         split(splitConjunctivePredicates(filterCondition), left, right)
+        //拆分filter的过滤谓词，splitConjunctivePredicates(filterCondition)返回一个expression的数组
       joinType match {
         case _: InnerLike =>
           // push down the single side `where` condition into respective sides
@@ -1235,7 +1239,7 @@ object PushPredicateThroughJoin extends Rule[LogicalPlan] with PredicateHelper {
           val (newJoinConditions, others) =
             commonFilterCondition.partition(canEvaluateWithinJoin)
           val newJoinCond = (newJoinConditions ++ joinCondition).reduceLeftOption(And)
-
+          // 如果是inner join，很简单，直接下推即可
           val join = Join(newLeft, newRight, joinType, newJoinCond, hint)
           if (others.nonEmpty) {
             Filter(others.reduceLeft(And), join)
@@ -1244,14 +1248,15 @@ object PushPredicateThroughJoin extends Rule[LogicalPlan] with PredicateHelper {
           }
         case RightOuter =>
           // push down the right side only `where` condition
-          val newLeft = left
+          val newLeft = left //作为nullable端的左孩子，where谓词是不能下推的
           val newRight = rightFilterConditions.
-            reduceLeftOption(And).map(Filter(_, right)).getOrElse(right)
-          val newJoinCond = joinCondition
+            reduceLeftOption(And).map(Filter(_, right)).getOrElse(right)//作为nonullable端的右孩子，加入filter然后下推。
+          val newJoinCond = joinCondition//joinCondition留在下面再优化
           val newJoin = Join(newLeft, newRight, RightOuter, newJoinCond, hint)
 
           (leftFilterConditions ++ commonFilterCondition).
             reduceLeftOption(And).map(Filter(_, newJoin)).getOrElse(newJoin)
+        //如果存在左孩子谓词和where中的"="的，放在生成join的上面，如果不存在，直接返回join
         case LeftOuter | LeftExistence(_) =>
           // push down the left side only `where` condition
           val newLeft = leftFilterConditions.
@@ -1268,16 +1273,18 @@ object PushPredicateThroughJoin extends Rule[LogicalPlan] with PredicateHelper {
       }
 
     // push down the join filter into sub query scanning if applicable
+    //以上是在处理join上端的filter的下推情况，现在来考虑join中的也就是on之后的filter下推情况
     case j @ Join(left, right, joinType, joinCondition, hint) =>
+    //同样对join中on后面的连接谓词分类，分为三类
       val (leftJoinConditions, rightJoinConditions, commonJoinCondition) =
         split(joinCondition.map(splitConjunctivePredicates).getOrElse(Nil), left, right)
 
       joinType match {
         case _: InnerLike | LeftSemi =>
           // push down the single side only join filter for both sides sub queries
-          val newLeft = leftJoinConditions.
+          val newLeft = leftJoinConditions.//如果是inner join，可以下推
             reduceLeftOption(And).map(Filter(_, left)).getOrElse(left)
-          val newRight = rightJoinConditions.
+          val newRight = rightJoinConditions.//如果是inner join，可以下推
             reduceLeftOption(And).map(Filter(_, right)).getOrElse(right)
           val newJoinCond = commonJoinCondition.reduceLeftOption(And)
 
@@ -1286,9 +1293,9 @@ object PushPredicateThroughJoin extends Rule[LogicalPlan] with PredicateHelper {
           // push down the left side only join filter for left side sub query
           val newLeft = leftJoinConditions.
             reduceLeftOption(And).map(Filter(_, left)).getOrElse(left)
-          val newRight = right
+          val newRight = right//右端为非空端，不能下推，只能放在join中作为条件
           val newJoinCond = (rightJoinConditions ++ commonJoinCondition).reduceLeftOption(And)
-
+          //最后将右端没有下推的filter和"="的filter一起存入newJoinCond，作为join的条件
           Join(newLeft, newRight, RightOuter, newJoinCond, hint)
         case LeftOuter | LeftAnti | ExistenceJoin(_) =>
           // push down the right side only join filter for right sub query
