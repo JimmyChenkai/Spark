@@ -60,47 +60,47 @@ abstract class Optimizer(sessionCatalog: SessionCatalog)
     val operatorOptimizationRuleSet =
       Seq(
         // Operator push down
-        PushProjectionThroughUnion,
-        ReorderJoin,
-        EliminateOuterJoin,
-        PushPredicateThroughJoin,
-        PushDownPredicate,
-        PushDownLeftSemiAntiJoin,
-        PushLeftSemiLeftAntiThroughJoin,
-        LimitPushDown,
-        ColumnPruning,
-        InferFiltersFromConstraints,
+        PushProjectionThroughUnion,                //列剪裁下推
+        ReorderJoin,                               //Join顺序优化
+        EliminateOuterJoin,                        //OuterJoin消除
+        PushPredicateThroughJoin,                  //谓词下推到Join算子
+        PushDownPredicate,                         //谓词下推
+        PushDownLeftSemiAntiJoin,                  //左半链接下推
+        PushLeftSemiLeftAntiThroughJoin,           //左半链接下推到Join算爱
+        LimitPushDown,                             //Limit算子下推 
+        ColumnPruning,                             //列剪裁 
+        InferFiltersFromConstraints,               //约束条件提取
         // Operator combine
-        CollapseRepartition,
-        CollapseProject,
-        CollapseWindow,
-        CombineFilters,
-        CombineLimits,
-        CombineUnions,
+        CollapseRepartition,                       //重分区组合
+        CollapseProject,                           //投影算子组合
+        CollapseWindow,                            //Window组合
+        CombineFilters,                            //过滤条件组合 
+        CombineLimits,                             //Limit操作组合 
+        CombineUnions,                             //Union操作组合  
         // Constant folding and strength reduction
-        TransposeWindow,
-        NullPropagation,
-        ConstantPropagation,
-        FoldablePropagation,
-        OptimizeIn,
-        ConstantFolding,
-        ReorderAssociativeOperator,
-        LikeSimplification,
-        BooleanSimplification,
-        SimplifyConditionals,
-        RemoveDispensableExpressions,
-        SimplifyBinaryComparison,
-        ReplaceNullWithFalseInPredicate,
-        PruneFilters,
-        EliminateSorts,
-        SimplifyCasts,
-        SimplifyCaseConversionExpressions,
-        RewriteCorrelatedScalarSubquery,
-        EliminateSerialization,
-        RemoveRedundantAliases,
-        RemoveNoopOperators,
-        SimplifyExtractValueOps,
-        CombineConcats) ++
+        TransposeWindow,                           //Window转换
+        NullPropagation,                           //Null提取
+        ConstantPropagation,                       //常量提取 
+        FoldablePropagation,                       //可折叠算子提取 
+        OptimizeIn,                                //In操作优化 
+        ConstantFolding,                           //常数折叠
+        ReorderAssociativeOperator,                //重排序关联算子优化
+        LikeSimplification,                        //Like算子简化
+        BooleanSimplification,                     //Boolean算子简化 
+        SimplifyConditionals,                      //条件简化
+        RemoveDispensableExpressions,              //Dispensable表达式消除
+        SimplifyBinaryComparison,                  //比较算子简化
+        ReplaceNullWithFalseInPredicate,           //In替换Null提取  
+        PruneFilters,                              //过滤条件剪裁 
+        EliminateSorts,                            //排序算子消除
+        SimplifyCasts,                             //Cast算子简化
+        SimplifyCaseConversionExpressions,         //Case表达式简化
+        RewriteCorrelatedScalarSubquery,           //依赖子查询重写 
+        EliminateSerialization,                    //序列化消除 
+        RemoveRedundantAliases,                    //冗余别名消除
+        RemoveNoopOperators,                       //无效操作消除 
+        SimplifyExtractValueOps,                   //提取操作简化 
+        CombineConcats) ++                         //常量拼接优化
         extendedOperatorOptimizationRules
 
     val operatorOptimizationBatch: Seq[Batch] = {
