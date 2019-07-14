@@ -427,7 +427,7 @@ object RemoveNoopOperators extends Rule[LogicalPlan] {
 }
 
 /**
- * Pushes down [[LocalLimit]] beneath UNION ALL and beneath the streamed inputs of outer joins.
+ * 下推 LocalLimit 到 UNION 或 Left/Right Outer JOIN之下:
  */
 object LimitPushDown extends Rule[LogicalPlan] {
 
@@ -441,36 +441,31 @@ object LimitPushDown extends Rule[LogicalPlan] {
   private def maybePushLocalLimit(limitExp: Expression, plan: LogicalPlan): LogicalPlan = {
     (limitExp, plan.maxRowsPerPartition) match {
       case (IntegerLiteral(newLimit), Some(childMaxRows)) if newLimit < childMaxRows =>
-        // If the child has a cap on max rows per partition and the cap is larger than
-        // the new limit, put a new LocalLimit there.
+        //如果子级在每个分区的max行上有一个cap，并且cap大于新的限制，那么在那里放置一个新的locallimit。
         LocalLimit(limitExp, stripGlobalLimitIfPresent(plan))
 
       case (_, None) =>
-        // If the child has no cap, put the new LocalLimit.
+        // 如果孩子没有上限，则设置新的locallimit。
         LocalLimit(limitExp, stripGlobalLimitIfPresent(plan))
 
       case _ =>
-        // Otherwise, don't put a new LocalLimit.
+        //否则不设置新的locallimit
         plan
     }
   }
 
   def apply(plan: LogicalPlan): LogicalPlan = plan transform {
-    // Adding extra Limits below UNION ALL for children which are not Limit or do not have Limit
-    // descendants whose maxRow is larger. This heuristic is valid assuming there does not exist any
-    // Limit push-down rule that is unable to infer the value of maxRows.
-    // Note: right now Union means UNION ALL, which does not de-duplicate rows, so it is safe to
-    // pushdown Limit through it. Once we add UNION DISTINCT, however, we will not be able to
-    // pushdown Limit.
+    //对于Union：
+    //若 Union 的任一一边 child 不是一个 limit（GlobalLimit 或 LocalLimit）
+    //或是一个 limit 但 limit value 大于 Union parent 的 limit value，
+    //以一个 LocalLimit （limit value 为 Union parent limit value）作为 child 的 parent 来作为该边新的 child
     case LocalLimit(exp, Union(children)) =>
       LocalLimit(exp, Union(children.map(maybePushLocalLimit(exp, _))))
-    // Add extra limits below OUTER JOIN. For LEFT OUTER and RIGHT OUTER JOIN we push limits to
-    // the left and right sides, respectively. It's not safe to push limits below FULL OUTER
-    // JOIN in the general case without a more invasive rewrite.
-    // We also need to ensure that this limit pushdown rule will not eventually introduce limits
-    // on both sides if it is applied multiple times. Therefore:
-    //   - If one side is already limited, stack another limit on top if the new limit is smaller.
-    //     The redundant limit will be collapsed by the CombineLimits rule.
+    //对于 Outer Join：
+    //对于 Left Outer Join，若 left side 不是一个 limit（GlobalLimit 或 LocalLimit）
+    //或是一个 limit 但 limit value 大于 Join parent 的 limit value，
+    //以一个 LocalLimit（limit value 为 Join parent limit value） 作为 left side 的 parent 来作为新的 left side；
+    //对于 Right Outer Join 同理，只是方向不同
     case LocalLimit(exp, join @ Join(left, right, joinType, _, _)) =>
       val newJoin = joinType match {
         case RightOuter => join.copy(right = maybePushLocalLimit(exp, right))
@@ -996,32 +991,31 @@ object PruneFilters extends Rule[LogicalPlan] with PredicateHelper {
 }
 
 /**
- * Pushes [[Filter]] operators through many operators iff:
- * 1) the operator is deterministic
- * 2) the predicate is deterministic and the operator will not change any of rows.
+ * 谓词下推遵循如下规律
+ * 1) 操作是必须是确定性的
+ * 2) 谓词是确定性的，运算符不会更改任何行。
+ * 通过case来做各种合法判断
  *
  * This heuristic is valid assuming the expression evaluation cost is minimal.
  */
 object PushDownPredicate extends Rule[LogicalPlan] with PredicateHelper {
   def apply(plan: LogicalPlan): LogicalPlan = plan transform {
-    // SPARK-13473: We can't push the predicate down when the underlying projection output non-
-    // deterministic field(s).  Non-deterministic expressions are essentially stateful. This
-    // implies that, for a given input row, the output are determined by the expression's initial
-    // state and all the input rows processed before. In another word, the order of input rows
-    // matters for non-deterministic expressions, while pushing down predicates changes the order.
-    // This also applies to Aggregate.
+    // SPARK-13473:当Projection输出是不确定性时候，我们是不可以做谓词下推的
+    // 因为不确定性表达式会本质上是有状态的。
+    // 其实就是，对于给定的输入行，输出由表达式的初始状态和之前处理的所有输入行决定。
+    // 换句话说，就是输入行的顺序对于非确定性表示式非常重要，如果非确定性表达式改变了输入行顺序，
+    // 那么这种谓词下推是非法的。
     case Filter(condition, project @ Project(fields, grandChild))
       if fields.forall(_.deterministic) && canPushThroughCondition(grandChild, condition) =>
       val aliasMap = getAliasMap(project)
       project.copy(child = Filter(replaceAlias(condition, aliasMap), grandChild))
-
+    //这种情况也适用于聚合操作。
     case filter @ Filter(condition, aggregate: Aggregate)
       if aggregate.aggregateExpressions.forall(_.deterministic)
         && aggregate.groupingExpressions.nonEmpty =>
       val aliasMap = getAliasMap(aggregate)
 
-      // For each filter, expand the alias and check if the filter can be evaluated using
-      // attributes produced by the aggregate operator's child operator.
+      // 对于每个筛选器，展开别名并检查是否可以使用聚合运算符的子运算符生成的属性来计算筛选器。
       val (candidates, nonDeterministic) =
         splitConjunctivePredicates(condition).partition(_.deterministic)
 
@@ -1044,10 +1038,10 @@ object PushDownPredicate extends Rule[LogicalPlan] with PredicateHelper {
       }
 
     // Push [[Filter]] operators through [[Window]] operators. Parts of the predicate that can be
-    // pushed beneath must satisfy the following conditions:
-    // 1. All the expressions are part of window partitioning key. The expressions can be compound.
-    // 2. Deterministic.
-    // 3. Placed before any non-deterministic predicates.
+    // 而窗口的谓词下推必须遵循如下条件
+    // 1. 所有表达式都是窗口分区键的一部分。表达式可以是复合的。
+    // 2. 确定的
+    // 3. 置于任何不确定谓词之前。
     case filter @ Filter(condition, w: Window)
       if w.partitionSpec.forall(_.isInstanceOf[AttributeReference]) =>
       val partitionAttrs = AttributeSet(w.partitionSpec.flatMap(_.references))
@@ -1070,7 +1064,7 @@ object PushDownPredicate extends Rule[LogicalPlan] with PredicateHelper {
       }
 
     case filter @ Filter(condition, union: Union) =>
-      // Union could change the rows, so non-deterministic predicate can't be pushed down
+      // Union可以更改行，因此不能向下推非确定性谓词
       val (pushDown, stayUp) = splitConjunctivePredicates(condition).partition(_.deterministic)
 
       if (pushDown.nonEmpty) {
