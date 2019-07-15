@@ -532,24 +532,26 @@ object PushProjectionThroughUnion extends Rule[LogicalPlan] with PredicateHelper
 }
 
 /**
- * Attempts to eliminate the reading of unneeded columns from the query plan.
+ * 尝试从查询计划中消除不需要的列的读取。
  *
- * Since adding Project before Filter conflicts with PushPredicatesThroughProject, this rule will
- * remove the Project p2 in the following pattern:
+ * 由于在筛选器之前添加项目与pushPredicatesThroughProject冲突，此规则将
+ * 按以下模式删除项目p2：
  *
  *   p1 @ Project(_, Filter(_, p2 @ Project(_, child))) if p2.outputSet.subsetOf(p2.inputSet)
  *
- * p2 is usually inserted by this rule and useless, p1 could prune the columns anyway.
+ * p2通常是由这个规则插入的，没有任何用处，p1仍然可以修剪列。
  */
 object ColumnPruning extends Rule[LogicalPlan] {
 
   def apply(plan: LogicalPlan): LogicalPlan = removeProjectBeforeFilter(plan transform {
-    // Prunes the unused columns from project list of Project/Aggregate/Expand
+    //从项目/聚合/展开的项目列表中删除未使用的列
     case p @ Project(_, p2: Project) if !p2.outputSet.subsetOf(p.references) =>
       p.copy(child = p2.copy(projectList = p2.projectList.filter(p.references.contains)))
+    //聚合
     case p @ Project(_, a: Aggregate) if !a.outputSet.subsetOf(p.references) =>
       p.copy(
         child = a.copy(aggregateExpressions = a.aggregateExpressions.filter(p.references.contains)))
+    //展开项目
     case a @ Project(_, e @ Expand(_, _, grandChild)) if !e.outputSet.subsetOf(a.references) =>
       val newOutput = e.output.filter(a.references.contains(_))
       val newProjects = e.projections.map { proj =>
@@ -559,11 +561,11 @@ object ColumnPruning extends Rule[LogicalPlan] {
       }
       a.copy(child = Expand(newProjects, newOutput, grandChild))
 
-    // Prunes the unused columns from child of `DeserializeToObject`
+    //从'deserializetoobject'的子级中删除未使用的列`
     case d @ DeserializeToObject(_, _, child) if !child.outputSet.subsetOf(d.references) =>
       d.copy(child = prunedChild(child, d.references))
 
-    // Prunes the unused columns from child of Aggregate/Expand/Generate/ScriptTransformation
+    // 从aggregate/expand/generate/scriptTransformation的子级中删除未使用的列
     case a @ Aggregate(_, _, child) if !child.outputSet.subsetOf(a.references) =>
       a.copy(child = prunedChild(child, a.references))
     case f @ FlatMapGroupsInPandas(_, _, _, child) if !child.outputSet.subsetOf(f.references) =>
@@ -574,7 +576,7 @@ object ColumnPruning extends Rule[LogicalPlan] {
         if !child.outputSet.subsetOf(s.references) =>
       s.copy(child = prunedChild(child, s.references))
 
-    // prune unrequired references
+    // 删除不需要的引用
     case p @ Project(_, g: Generate) if p.references != g.outputSet =>
       val requiredAttrs = p.references -- g.producedAttributes ++ g.generator.references
       val newChild = prunedChild(g.child, requiredAttrs)
@@ -583,19 +585,19 @@ object ColumnPruning extends Rule[LogicalPlan] {
         .map(_._2)
       p.copy(child = g.copy(child = newChild, unrequiredChildIndex = unrequiredIndices))
 
-    // Eliminate unneeded attributes from right side of a Left Existence Join.
+    // 从左侧存在联接的右侧删除不需要的属性。
     case j @ Join(_, right, LeftExistence(_), _, _) =>
       j.copy(right = prunedChild(right, j.references))
 
-    // all the columns will be used to compare, so we can't prune them
+    // 所有列都将用于比较，因此我们不能删减它们
     case p @ Project(_, _: SetOperation) => p
     case p @ Project(_, _: Distinct) => p
-    // Eliminate unneeded attributes from children of Union.
+    // 从联合子项中删除不需要的属性。
     case p @ Project(_, u: Union) =>
       if (!u.outputSet.subsetOf(p.references)) {
         val firstChild = u.children.head
         val newOutput = prunedChild(firstChild, p.references).output
-        // pruning the columns of all children based on the pruned first child.
+        // 基于已修剪的第一个子级修剪所有子级的列。
         val newChildren = u.children.map { p =>
           val selected = p.output.zipWithIndex.filter { case (a, i) =>
             newOutput.contains(firstChild.output(i))
@@ -607,19 +609,18 @@ object ColumnPruning extends Rule[LogicalPlan] {
         p
       }
 
-    // Prune unnecessary window expressions
+    // 删除不必要的窗口表达式
     case p @ Project(_, w: Window) if !w.windowOutputSet.subsetOf(p.references) =>
       p.copy(child = w.copy(
         windowExpressions = w.windowExpressions.filter(p.references.contains)))
 
-    // Can't prune the columns on LeafNode
+    // 无法删除leafnode上的列
     case p @ Project(_, _: LeafNode) => p
 
     case p @ NestedColumnAliasing(nestedFieldToAlias, attrToAliases) =>
       NestedColumnAliasing.replaceToAliases(p, nestedFieldToAlias, attrToAliases)
 
-    // for all other logical plans that inherits the output from it's children
-    // Project over project is handled by the first case, skip it here.
+    // 对于继承它的子项目over project输出的所有其他逻辑计划，都是由第一种情况处理的，请跳过这里。
     case p @ Project(_, child) if !child.isInstanceOf[Project] =>
       val required = child.references ++ p.references
       if (!child.inputSet.subsetOf(required)) {
@@ -630,7 +631,7 @@ object ColumnPruning extends Rule[LogicalPlan] {
       }
   })
 
-  /** Applies a projection only when the child is producing unnecessary attributes */
+  /** 仅当子项产生不必要的属性时应用投影 */
   private def prunedChild(c: LogicalPlan, allReferences: AttributeSet) =
     if (!c.outputSet.subsetOf(allReferences)) {
       Project(c.output.filter(allReferences.contains), c)
@@ -639,9 +640,9 @@ object ColumnPruning extends Rule[LogicalPlan] {
     }
 
   /**
-   * The Project before Filter is not necessary but conflict with PushPredicatesThroughProject,
-   * so remove it. Since the Projects have been added top-down, we need to remove in bottom-up
-   * order, otherwise lower Projects can be missed.
+   * 筛选前的项目不是必需的，但与pushPredicatesThroughProject冲突，
+   * 所以移除它。由于项目是自上而下添加的，因此需要从下向上移除
+   * 订单，否则较低的项目可能会丢失。
    */
   private def removeProjectBeforeFilter(plan: LogicalPlan): LogicalPlan = plan transformUp {
     case p1 @ Project(_, f @ Filter(_, p2 @ Project(_, child)))
@@ -736,21 +737,20 @@ object CollapseProject extends Rule[LogicalPlan] {
 }
 
 /**
- * Combines adjacent [[RepartitionOperation]] operators
+ * 组合相邻的[[RepartitionOperation]]运算符。
+ * 重分区组合
  */
 object CollapseRepartition extends Rule[LogicalPlan] {
   def apply(plan: LogicalPlan): LogicalPlan = plan transformUp {
-    // Case 1: When a Repartition has a child of Repartition or RepartitionByExpression,
-    // 1) When the top node does not enable the shuffle (i.e., coalesce API), but the child
-    //   enables the shuffle. Returns the child node if the last numPartitions is bigger;
-    //   otherwise, keep unchanged.
-    // 2) In the other cases, returns the top node with the child's child
+    // Case 1: 当重分区具有重分区或重分区ByExpression的子级时，
+    // 1) 当top节点不启用shuffle但子节点（即coalescapi）启用shuffle时。如果最后一个numpartitions较大，则返回子节点；否则，保持不变。
+    // 2) 在其他情况下，返回具有子节点的顶级节点
     case r @ Repartition(_, _, child: RepartitionOperation) => (r.shuffle, child.shuffle) match {
       case (false, true) => if (r.numPartitions >= child.numPartitions) child else r
       case _ => r.copy(child = child.child)
     }
-    // Case 2: When a RepartitionByExpression has a child of Repartition or RepartitionByExpression
-    // we can remove the child.
+    // Case 2: 当repartitionbyexpression具有repartition或repartitionbyexpression的子级时
+    // 我们可以把级删掉。
     case r @ RepartitionByExpression(_, child: RepartitionOperation, _) =>
       r.copy(child = child.child)
   }
@@ -796,13 +796,11 @@ object TransposeWindow extends Rule[LogicalPlan] {
 }
 
 /**
- * Generate a list of additional filters from an operator's existing constraint but remove those
- * that are either already part of the operator's condition or are part of the operator's child
- * constraints. These filters are currently inserted to the existing conditions in the Filter
- * operators and on either side of Join operators.
+ * 从运算符的现有约束生成附加筛选器列表，
+ * 但删除那些已经是运算符条件的一部分或是运算符子约束的一部分的筛选器。
+ * 这些筛选器当前插入到筛选器运算符和联接运算符任一侧的现有条件中。
  *
- * Note: While this optimization is applicable to a lot of types of join, it primarily benefits
- * Inner and LeftSemi joins.
+ * Note: 虽然这种优化适用于许多类型的连接，但它主要有利于内部连接和左半连接。
  */
 object InferFiltersFromConstraints extends Rule[LogicalPlan]
   with PredicateHelper with ConstraintHelper {
@@ -816,6 +814,7 @@ object InferFiltersFromConstraints extends Rule[LogicalPlan]
   }
 
   private def inferFilters(plan: LogicalPlan): LogicalPlan = plan transform {
+    //对于Filter谓词
     case filter @ Filter(condition, child) =>
       val newFilters = filter.constraints --
         (child.constraints ++ splitConjunctivePredicates(condition))
@@ -824,24 +823,23 @@ object InferFiltersFromConstraints extends Rule[LogicalPlan]
       } else {
         filter
       }
-
+    //各种链接
     case join @ Join(left, right, joinType, conditionOpt, _) =>
       joinType match {
-        // For inner join, we can infer additional filters for both sides. LeftSemi is kind of an
-        // inner join, it just drops the right side in the final output.
+        // 对于内部连接，我们可以推断出两侧的附加过滤器。LeftSemi是一种内部联接，它只是在最终输出中删除右侧。
         case _: InnerLike | LeftSemi =>
           val allConstraints = getAllConstraints(left, right, conditionOpt)
           val newLeft = inferNewFilter(left, allConstraints)
           val newRight = inferNewFilter(right, allConstraints)
           join.copy(left = newLeft, right = newRight)
 
-        // For right outer join, we can only infer additional filters for left side.
+        // 对于右侧外部连接，我们只能推断左侧的附加过滤器。
         case RightOuter =>
           val allConstraints = getAllConstraints(left, right, conditionOpt)
           val newLeft = inferNewFilter(left, allConstraints)
           join.copy(left = newLeft)
 
-        // For left join, we can only infer additional filters for right side.
+        // 对于左连接，我们只能推断右侧的附加过滤器。
         case LeftOuter | LeftAnti =>
           val allConstraints = getAllConstraints(left, right, conditionOpt)
           val newRight = inferNewFilter(right, allConstraints)
@@ -851,6 +849,7 @@ object InferFiltersFromConstraints extends Rule[LogicalPlan]
       }
   }
 
+  // 获取所有约束
   private def getAllConstraints(
       left: LogicalPlan,
       right: LogicalPlan,
@@ -860,6 +859,7 @@ object InferFiltersFromConstraints extends Rule[LogicalPlan]
     baseConstraints.union(inferAdditionalConstraints(baseConstraints))
   }
 
+  // 推断一个新的Filter
   private def inferNewFilter(plan: LogicalPlan, constraints: Set[Expression]): LogicalPlan = {
     val newPredicates = constraints
       .union(constructIsNotNullConstraints(constraints, plan.output))
