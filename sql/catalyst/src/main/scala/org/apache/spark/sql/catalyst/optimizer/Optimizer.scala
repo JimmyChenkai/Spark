@@ -652,22 +652,23 @@ object ColumnPruning extends Rule[LogicalPlan] {
 }
 
 /**
- * Combines two [[Project]] operators into one and perform alias substitution,
- * merging the expressions into one single expression for the following cases.
- * 1. When two [[Project]] operators are adjacent.
- * 2. When two [[Project]] operators have LocalLimit/Sample/Repartition operator between them
- *    and the upper project consists of the same number of columns which is equal or aliasing.
- *    `GlobalLimit(LocalLimit)` pattern is also considered.
+ * 将两个[[projection]]运算符组合为一个并执行别名替换，
+ * 在下列情况下将表达式合并为单个表达式。
+ * 1. 当两个[[projection]]操作员相邻时。
+ * 2. 当两个[[project]]运算符之间有locallimit/sample/repartition运算符时，
+ * 上面的项目由相同数目的列组成，这些列等于或别名。` globallimit（locallimit）`模式也被考虑。
  */
 object CollapseProject extends Rule[LogicalPlan] {
 
   def apply(plan: LogicalPlan): LogicalPlan = plan transformUp {
+    //连个projection有相同非确定性输出
     case p1 @ Project(_, p2: Project) =>
       if (haveCommonNonDeterministicOutput(p1.projectList, p2.projectList)) {
         p1
       } else {
         p2.copy(projectList = buildCleanedProjectList(p1.projectList, p2.projectList))
       }
+    //聚合操作
     case p @ Project(_, agg: Aggregate) =>
       if (haveCommonNonDeterministicOutput(p.projectList, agg.aggregateExpressions)) {
         p
@@ -675,15 +676,19 @@ object CollapseProject extends Rule[LogicalPlan] {
         agg.copy(aggregateExpressions = buildCleanedProjectList(
           p.projectList, agg.aggregateExpressions))
       }
+    //globalLimit
     case Project(l1, g @ GlobalLimit(_, limit @ LocalLimit(_, p2 @ Project(l2, _))))
         if isRenaming(l1, l2) =>
       val newProjectList = buildCleanedProjectList(l1, l2)
       g.copy(child = limit.copy(child = p2.copy(projectList = newProjectList)))
+    //localLimit
     case Project(l1, limit @ LocalLimit(_, p2 @ Project(l2, _))) if isRenaming(l1, l2) =>
       val newProjectList = buildCleanedProjectList(l1, l2)
       limit.copy(child = p2.copy(projectList = newProjectList))
+    //重分区
     case Project(l1, r @ Repartition(_, _, p @ Project(l2, _))) if isRenaming(l1, l2) =>
       r.copy(child = p.copy(projectList = buildCleanedProjectList(l1, p.projectList)))
+    //样例
     case Project(l1, s @ Sample(_, _, _, _, p2 @ Project(l2, _))) if isRenaming(l1, l2) =>
       s.copy(child = p2.copy(projectList = buildCleanedProjectList(l1, p2.projectList)))
   }
@@ -757,17 +762,16 @@ object CollapseRepartition extends Rule[LogicalPlan] {
 }
 
 /**
- * Collapse Adjacent Window Expression.
- * - If the partition specs and order specs are the same and the window expression are
- *   independent and are of the same window function type, collapse into the parent.
+ * 折叠相邻窗口表达式。
+ * - 如果分区规范和顺序规范相同，并且窗口表达式是独立的，并且属于相同的窗口函数类型，则折叠到父级。
  */
 object CollapseWindow extends Rule[LogicalPlan] {
   def apply(plan: LogicalPlan): LogicalPlan = plan transformUp {
     case w1 @ Window(we1, ps1, os1, w2 @ Window(we2, ps2, os2, grandChild))
         if ps1 == ps2 && os1 == os2 && w1.references.intersect(w2.windowOutputSet).isEmpty &&
           we1.nonEmpty && we2.nonEmpty &&
-          // This assumes Window contains the same type of window expressions. This is ensured
-          // by ExtractWindowFunctions.
+          // 这假定窗口包含相同类型的窗口表达式。这是可以保证的
+          // 通过ExtractWindowFunctions。
           WindowFunctionType.functionType(we1.head) == WindowFunctionType.functionType(we2.head) =>
       w1.copy(windowExpressions = we2 ++ we1, child = grandChild)
   }
@@ -901,13 +905,13 @@ object CombineUnions extends Rule[LogicalPlan] {
 }
 
 /**
- * Combines two adjacent [[Filter]] operators into one, merging the non-redundant conditions into
- * one conjunctive predicate.
+ * 
+ * 两个相邻的[[Filter]]运算符合并为一个，将非冗余条件合并为一个连接谓词。
  */
 object CombineFilters extends Rule[LogicalPlan] with PredicateHelper {
   def apply(plan: LogicalPlan): LogicalPlan = plan transform {
-    // The query execution/optimization does not guarantee the expressions are evaluated in order.
-    // We only can combine them if and only if both are deterministic.
+    // 查询执行/优化不保证按顺序计算表达式。
+    // 只有当且仅当两者都具有确定性时，我们才能组合它们。
     case Filter(fc, nf @ Filter(nc, grandChild)) if fc.deterministic && nc.deterministic =>
       (ExpressionSet(splitConjunctivePredicates(fc)) --
         ExpressionSet(splitConjunctivePredicates(nc))).reduceOption(And) match {
@@ -1307,8 +1311,7 @@ object PushPredicateThroughJoin extends Rule[LogicalPlan] with PredicateHelper {
 }
 
 /**
- * Combines two adjacent [[Limit]] operators into one, merging the
- * expressions into one single expression.
+ * 将两个相邻的[[Limit]]运算符合并为一个，将表达式合并为一个表达式。
  */
 object CombineLimits extends Rule[LogicalPlan] {
   def apply(plan: LogicalPlan): LogicalPlan = plan transform {
