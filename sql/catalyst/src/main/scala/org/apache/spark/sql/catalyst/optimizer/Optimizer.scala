@@ -319,14 +319,13 @@ class SimpleTestOptimizer extends Optimizer(
     new SQLConf().copy(SQLConf.CASE_SENSITIVE -> true)))
 
 /**
- * Remove redundant aliases from a query plan. A redundant alias is an alias that does not change
- * the name or metadata of a column, and does not deduplicate it.
+ * 从查询计划中删除冗余别名。 
+ * 冗余别名是一个别名，它不会更改列的名称或元数据，也不会对其进行重复数据消除。
  */
 object RemoveRedundantAliases extends Rule[LogicalPlan] {
 
   /**
-   * Create an attribute mapping from the old to the new attributes. This function will only
-   * return the attribute pairs that have changed.
+   * 创建从旧属性到新属性的属性映射。此函数将只返回已更改的属性对。
    */
   private def createAttributeMapping(current: LogicalPlan, next: LogicalPlan)
       : Seq[(Attribute, Attribute)] = {
@@ -336,12 +335,12 @@ object RemoveRedundantAliases extends Rule[LogicalPlan] {
   }
 
   /**
-   * Remove the top-level alias from an expression when it is redundant.
+   * 当表达式是多余的时，从该表达式中移除顶级别名。
    */
   private def removeRedundantAlias(e: Expression, blacklist: AttributeSet): Expression = e match {
-    // Alias with metadata can not be stripped, or the metadata will be lost.
-    // If the alias name is different from attribute name, we can't strip it either, or we
-    // may accidentally change the output schema name of the root plan.
+    //不能剥离包含元数据的别名，否则将丢失元数据。
+    //如果别名与属性名不同，我们也不能删除它，或者
+    //可能会意外更改根计划的输出架构名称。
     case a @ Alias(attr: Attribute, name)
       if a.metadata == Metadata.empty &&
         name == attr.name &&
@@ -352,21 +351,19 @@ object RemoveRedundantAliases extends Rule[LogicalPlan] {
   }
 
   /**
-   * Remove redundant alias expression from a LogicalPlan and its subtree. A blacklist is used to
-   * prevent the removal of seemingly redundant aliases used to deduplicate the input for a (self)
-   * join or to prevent the removal of top-level subquery attributes.
+   * 从逻辑计划及其子树中删除冗余别名表达式。黑名单用于防止删除看似多余的别名，
+   * 这些别名用于消除（自）联接的输入重复数据或防止删除顶级子查询属性。
    */
   private def removeRedundantAliases(plan: LogicalPlan, blacklist: AttributeSet): LogicalPlan = {
     plan match {
-      // We want to keep the same output attributes for subqueries. This means we cannot remove
-      // the aliases that produce these attributes
+      //我们希望为子查询保留相同的输出属性。这意味着我们不能删除产生这些属性的别名
       case Subquery(child) =>
         Subquery(removeRedundantAliases(child, blacklist ++ child.outputSet))
 
-      // A join has to be treated differently, because the left and the right side of the join are
-      // not allowed to use the same attributes. We use a blacklist to prevent us from creating a
-      // situation in which this happens; the rule will only remove an alias if its child
-      // attribute is not on the black list.
+      //必须对联接进行不同的处理，因为联接的左侧和右侧是
+      //不允许使用相同的属性。我们使用黑名单阻止我们创建
+      //发生这种情况的情况；规则仅在其子级
+      //属性不在黑名单上。
       case Join(left, right, joinType, condition, hint) =>
         val newLeft = removeRedundantAliases(left, blacklist ++ right.outputSet)
         val newRight = removeRedundantAliases(right, blacklist ++ newLeft.outputSet)
@@ -379,7 +376,7 @@ object RemoveRedundantAliases extends Rule[LogicalPlan] {
         Join(newLeft, newRight, joinType, newCondition, hint)
 
       case _ =>
-        // Remove redundant aliases in the subtree(s).
+        // 删除子树中的冗余别名。
         val currentNextAttrPairs = mutable.Buffer.empty[(Attribute, Attribute)]
         val newNode = plan.mapChildren { child =>
           val newChild = removeRedundantAliases(child, blacklist)
@@ -387,13 +384,12 @@ object RemoveRedundantAliases extends Rule[LogicalPlan] {
           newChild
         }
 
-        // Create the attribute mapping. Note that the currentNextAttrPairs can contain duplicate
-        // keys in case of Union (this is caused by the PushProjectionThroughUnion rule); in this
-        // case we use the the first mapping (which should be provided by the first child).
+        //创建映射属性。请注意，currentNextAirs可以包含重复的
+        //在联合的情况下使用键（这是由PushProjectionThroughUnion规则引起的）；在此
+        //案例我们使用第一个映射（应该由第一个孩子提供
         val mapping = AttributeMap(currentNextAttrPairs)
 
-        // Create a an expression cleaning function for nodes that can actually produce redundant
-        // aliases, use identity otherwise.
+        // 为实际可以产生冗余的节点创建表达式清理函数别名，否则使用标识。
         val clean: Expression => Expression = plan match {
           case _: Project => removeRedundantAlias(_, blacklist)
           case _: Aggregate => removeRedundantAlias(_, blacklist)
@@ -401,7 +397,7 @@ object RemoveRedundantAliases extends Rule[LogicalPlan] {
           case _ => identity[Expression]
         }
 
-        // Transform the expressions.
+        // 转换表达式
         newNode.mapExpressions { expr =>
           clean(expr.transform {
             case a: Attribute => mapping.getOrElse(a, a)
@@ -778,9 +774,9 @@ object CollapseWindow extends Rule[LogicalPlan] {
 }
 
 /**
- * Transpose Adjacent Window Expressions.
- * - If the partition spec of the parent Window expression is compatible with the partition spec
- *   of the child window expression, transpose them.
+ * 转置相邻的窗口表达式。
+ * 
+ * - 如果父窗口表达式的分区规范与子窗口表达式的分区规范兼容，请转置它们。
  */
 object TransposeWindow extends Rule[LogicalPlan] {
   private def compatibleParititions(ps1 : Seq[Expression], ps2: Seq[Expression]): Boolean = {
@@ -879,7 +875,7 @@ object InferFiltersFromConstraints extends Rule[LogicalPlan]
 }
 
 /**
- * Combines all adjacent [[Union]] operators into a single [[Union]].
+ * 将所有相邻的[[union]]运算符组合为单个[[union]]。
  */
 object CombineUnions extends Rule[LogicalPlan] {
   def apply(plan: LogicalPlan): LogicalPlan = plan transformDown {
@@ -924,7 +920,7 @@ object CombineFilters extends Rule[LogicalPlan] with PredicateHelper {
 }
 
 /**
- * Removes no-op SortOrder from Sort
+ * 从排序中删除no op sortorder
  */
 object EliminateSorts extends Rule[LogicalPlan] {
   def apply(plan: LogicalPlan): LogicalPlan = plan transform {
@@ -961,23 +957,21 @@ object RemoveRedundantSorts extends Rule[LogicalPlan] {
 }
 
 /**
- * Removes filters that can be evaluated trivially.  This can be done through the following ways:
- * 1) by eliding the filter for cases where it will always evaluate to `true`.
- * 2) by substituting a dummy empty relation when the filter will always evaluate to `false`.
- * 3) by eliminating the always-true conditions given the constraints on the child's output.
+ * 删除可以进行普通评估的筛选器。这可以通过以下方式实现：
+ * 1) 通过删除筛选条件，它将始终计算为“true”。
+ * 2) 当筛选器的值始终为false时，通过替换空的虚拟关系。
+ * 3) 通过消除总是真实的条件，给出了对孩子输出的约束。
  */
 object PruneFilters extends Rule[LogicalPlan] with PredicateHelper {
   def apply(plan: LogicalPlan): LogicalPlan = plan transform {
-    // If the filter condition always evaluate to true, remove the filter.
+    // 如果筛选条件的值始终为真，请移除筛选。
     case Filter(Literal(true, BooleanType), child) => child
-    // If the filter condition always evaluate to null or false,
-    // replace the input with an empty relation.
+    // 如果筛选条件的值始终为空或假，将输入替换为空关系。
     case Filter(Literal(null, _), child) =>
       LocalRelation(child.output, data = Seq.empty, isStreaming = plan.isStreaming)
     case Filter(Literal(false, BooleanType), child) =>
       LocalRelation(child.output, data = Seq.empty, isStreaming = plan.isStreaming)
-    // If any deterministic condition is guaranteed to be true given the constraints on the child's
-    // output, remove the condition
+    // 如果在给定子对象输出的约束的情况下，保证任何确定性条件为真，则移除该条件。
     case f @ Filter(fc, p: LogicalPlan) =>
       val (prunedPredicates, remainingPredicates) =
         splitConjunctivePredicates(fc).partition { cond =>
