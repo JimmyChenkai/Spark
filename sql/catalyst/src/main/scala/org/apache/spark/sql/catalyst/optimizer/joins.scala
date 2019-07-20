@@ -28,18 +28,16 @@ import org.apache.spark.sql.catalyst.rules._
 import org.apache.spark.sql.internal.SQLConf
 
 /**
- * Reorder the joins and push all the conditions into join, so that the bottom ones have at least
- * one condition.
+ * 重新排序联接并将所有条件推入联接，以便底部的条件至少具有一个条件。
+ * 如果所有联接都至少有一个条件，则不会更改联接顺序。
  *
- * The order of joins will not be changed if all of them already have at least one condition.
- *
- * If star schema detection is enabled, reorder the star join plans based on heuristics.
+ * 如果启用了星型模式检测，则根据启发式重新排序星型联接计划。
  */
 object ReorderJoin extends Rule[LogicalPlan] with PredicateHelper {
   /**
-   * Join a list of plans together and push down the conditions into them.
+   * 把计划的清单连在一起，把条件压入其中。
    *
-   * The joined plan are picked from left to right, prefer those has at least one join condition.
+   * 连接的计划是从左到右选择的，最好是那些至少有一个连接条件的计划。
    *
    * @param input a list of LogicalPlans to inner join and the type of inner join.
    * @param conditions a list of condition for join.
@@ -65,7 +63,7 @@ object ReorderJoin extends Rule[LogicalPlan] with PredicateHelper {
       }
     } else {
       val (left, _) :: rest = input.toList
-      // find out the first join that have at least one join condition
+      // 找出至少有一个联接条件的第一个联接
       val conditionalJoin = rest.find { planJoinPair =>
         val plan = planJoinPair._1
         val refs = left.outputSet ++ plan.outputSet
@@ -74,7 +72,7 @@ object ReorderJoin extends Rule[LogicalPlan] with PredicateHelper {
           .filterNot(r => r.references.nonEmpty && canEvaluate(r, plan))
           .exists(_.references.subsetOf(refs))
       }
-      // pick the next one if no condition left
+      // 如果没有条件，选择下一个
       val (right, innerJoinType) = conditionalJoin.getOrElse(rest.head)
 
       val joinedRefs = left.outputSet ++ right.outputSet
@@ -83,7 +81,7 @@ object ReorderJoin extends Rule[LogicalPlan] with PredicateHelper {
       val joined = Join(left, right, innerJoinType,
         joinConditions.reduceLeftOption(And), JoinHint.NONE)
 
-      // should not have reference to same logical plan
+      // 不应引用同一逻辑计划
       createOrderedJoin(Seq((joined, Inner)) ++ rest.filterNot(_._1 eq right), others)
     }
   }
@@ -114,21 +112,21 @@ object ReorderJoin extends Rule[LogicalPlan] with PredicateHelper {
 }
 
 /**
- * Elimination of outer joins, if the predicates can restrict the result sets so that
- * all null-supplying rows are eliminated
+ * 消除外连接优化将一些和内连接逻辑等价的外连接转化为内连接，可以过滤很多不需要的记录。
+ * 如果谓词可以限制结果集使得所有空的行都被消除：
+ * 
+ * - right outer -> inner：如果左边有这样的谓语
+ * - left outer -> inner：如果右边有这样的谓语
+ * - full outer -> inner：如果两边都有这样的谓语
+ * - full outer -> left outer：仅仅左边有这样的谓语
+ * - full outer -> right outer：仅仅右边有这样的谓语
  *
- * - full outer -> inner if both sides have such predicates
- * - left outer -> inner if the right side has such predicates
- * - right outer -> inner if the left side has such predicates
- * - full outer -> left outer if only the left side has such predicates
- * - full outer -> right outer if only the right side has such predicates
- *
- * This rule should be executed before pushing down the Filter
+ * 此规则应在按下筛选器之前执行
  */
 object EliminateOuterJoin extends Rule[LogicalPlan] with PredicateHelper {
 
   /**
-   * Returns whether the expression returns null or false when all inputs are nulls.
+   * 返回当所有输入都为空时表达式是否返回空值或假值。
    */
   private def canFilterOutNull(e: Expression): Boolean = {
     if (!e.deterministic || SubqueryExpression.hasCorrelatedSubquery(e)) return false
@@ -140,6 +138,7 @@ object EliminateOuterJoin extends Rule[LogicalPlan] with PredicateHelper {
     v == null || v == false
   }
 
+  //生成新的连接类型
   private def buildNewJoinType(filter: Filter, join: Join): JoinType = {
     val conditions = splitConjunctivePredicates(filter.condition) ++ filter.constraints
     val leftConditions = conditions.filter(_.references.subsetOf(join.left.outputSet))
