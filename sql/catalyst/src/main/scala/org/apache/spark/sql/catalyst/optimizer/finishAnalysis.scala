@@ -31,31 +31,35 @@ import org.apache.spark.sql.types._
 
 
 /**
- * Finds all the expressions that are unevaluable and replace/rewrite them with semantically
- * equivalent expressions that can be evaluated. Currently we replace two kinds of expressions:
- * 1) [[RuntimeReplaceable]] expressions
- * 2) [[UnevaluableAggregate]] expressions such as Every, Some, Any, CountIf
- * This is mainly used to provide compatibility with other databases.
+ * 查找所有不可计算的表达式，并用可计算的语义等效表达式替换/重写它们。
+ * 目前我们替换了两种表达式：
+ * 1) [[RuntimeReplaceable]] 表达式
+ * 2) [[UnevaluableAggregate]] 表达式 例如：Every, Some, Any, CountIf
+ *这主要用于提供与其他数据库的兼容性。
  * Few examples are:
- *   we use this to support "nvl" by replacing it with "coalesce".
- *   we use this to replace Every and Any with Min and Max respectively.
+ *   我们使用这个来支持“nvl”，用“coalesce”替换它。
+ *   
  *
- * TODO: In future, explore an option to replace aggregate functions similar to
- * how RuntimeReplaceable does.
+ * TODO: 在将来，探索替换聚合函数的选项，类似于RuntimeReplacement的功能。
  */
 object ReplaceExpressions extends Rule[LogicalPlan] {
   def apply(plan: LogicalPlan): LogicalPlan = plan transformAllExpressions {
-    case e: RuntimeReplaceable => e.child
+    //RuntimeReplaceable 表达式
+    case e: RuntimeReplaceable => e.child.
+    //ContIf 表达式
     case CountIf(predicate) => Count(new NullIf(predicate, Literal.FalseLiteral))
-    case SomeAgg(arg) => Max(arg)
+    //Some 表达式
+    case SomeAggarg) => Max(arg)
+    //Any 表达式
     case AnyAgg(arg) => Max(arg)
+    //Every 表达式
     case EveryAgg(arg) => Min(arg)
   }
 }
 
 
 /**
- * Computes the current date and time to make sure we return the same result in a single query.
+ * 计算当前日期和时间，以确保在单个查询中返回相同的结果。
  */
 object ComputeCurrentTime extends Rule[LogicalPlan] {
   def apply(plan: LogicalPlan): LogicalPlan = {
@@ -77,7 +81,7 @@ object ComputeCurrentTime extends Rule[LogicalPlan] {
 }
 
 
-/** Replaces the expression of CurrentDatabase with the current database name. */
+/** 用当前数据库名称替换当前数据库的表达式。 */
 case class GetCurrentDatabase(sessionCatalog: SessionCatalog) extends Rule[LogicalPlan] {
   def apply(plan: LogicalPlan): LogicalPlan = {
     plan transformAllExpressions {
