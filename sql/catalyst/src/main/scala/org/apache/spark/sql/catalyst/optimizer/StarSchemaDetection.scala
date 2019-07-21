@@ -76,26 +76,25 @@ object StarSchemaDetection extends PredicateHelper {
       input: Seq[LogicalPlan],
       conditions: Seq[Expression]): Seq[LogicalPlan] = {
 
+    //定义一个空星型Plan
     val emptyStarJoinPlan = Seq.empty[LogicalPlan]
-
+    //如果size<2 为emptyStarPlan
     if (input.size < 2) {
       emptyStarJoinPlan
     } else {
-      // Find if the input plans are eligible for star join detection.
-      // An eligible plan is a base table access with valid statistics.
+      // 查找输入计划是否符合星型联接检测。
+      // 符合条件的计划是具有有效统计信息的基表访问。
       val foundEligibleJoin = input.forall {
         case PhysicalOperation(_, _, t: LeafNode) if t.stats.rowCount.isDefined => true
         case _ => false
       }
 
       if (!foundEligibleJoin) {
-        // Some plans don't have stats or are complex plans. Conservatively,
-        // return an empty star join. This restriction can be lifted
-        // once statistics are propagated in the plan.
+        // 有些计划没有统计数据或是复杂的计划。保守地说，返回空的星形联接。
+        // 这个限制可以解除,在计划中传播统计信息后。
         emptyStarJoinPlan
       } else {
-        // Find the fact table using cardinality based heuristics i.e.
-        // the table with the largest number of rows.
+        // 使用基于基数的启发式方法查找事实表，即行数最大的表。
         val sortedFactTables = input.map { plan =>
           TableAccessCardinality(plan, getTableAccessCardinality(plan))
         }.collect { case t @ TableAccessCardinality(_, Some(_)) =>
@@ -107,27 +106,25 @@ object StarSchemaDetection extends PredicateHelper {
             emptyStarJoinPlan
           case table1 :: table2 :: _
             if table2.size.get.toDouble > conf.starSchemaFTRatio * table1.size.get.toDouble =>
-            // If the top largest tables have comparable number of rows, return an empty star plan.
-            // This restriction will be lifted when the algorithm is generalized
-            // to return multiple star plans.
+            // 如果最大的表具有可比较的行数，则返回空的星型图。
+            // 此限制将在推广算法时解除,返回星型Plan
             emptyStarJoinPlan
           case TableAccessCardinality(factTable, _) :: rest =>
-            // Find the fact table joins.
+            // 寻找事实表链接
             val allFactJoins = rest.collect { case TableAccessCardinality(plan, _)
               if findJoinConditions(factTable, plan, conditions).nonEmpty =>
               plan
             }
 
-            // Find the corresponding join conditions.
+            // 找到相应的连接条件。
             val allFactJoinCond = allFactJoins.flatMap { plan =>
               val joinCond = findJoinConditions(factTable, plan, conditions)
               joinCond
             }
 
-            // Verify if the join columns have valid statistics.
-            // Allow any relational comparison between the tables. Later
-            // we will heuristically choose a subset of equi-join
-            // tables.
+            // 验证联接列是否具有有效的统计信息。
+            // 允许在表之间进行任何关系比较。
+            // 稍后，我们将启发式地选择Equi联接表的子集。
             val areStatsAvailable = allFactJoins.forall { dimTable =>
               allFactJoinCond.exists {
                 case BinaryComparison(lhs: AttributeReference, rhs: AttributeReference) =>
@@ -141,9 +138,7 @@ object StarSchemaDetection extends PredicateHelper {
             if (!areStatsAvailable) {
               emptyStarJoinPlan
             } else {
-              // Find the subset of dimension tables. A dimension table is assumed to be in a
-              // RI relationship with the fact table. Only consider equi-joins
-              // between a fact and a dimension table to avoid expanding joins.
+             // 查找维度表的子集。假设维度表位于与事实表的关系。只考虑等价连接在事实和维度表之间，以避免展开联接。
               val eligibleDimPlans = allFactJoins.filter { dimTable =>
                 allFactJoinCond.exists {
                   case cond @ Equality(lhs: AttributeReference, rhs: AttributeReference) =>
@@ -154,9 +149,8 @@ object StarSchemaDetection extends PredicateHelper {
               }
 
               if (eligibleDimPlans.isEmpty || eligibleDimPlans.size < 2) {
-                // An eligible star join was not found since the join is not
-                // an RI join, or the star join is an expanding join.
-                // Also, a star would involve more than one dimension table.
+                // 找不到符合条件的星型联接，因为该联接不是RI联接，或者星型联接是扩展联接。
+                // 此外，一个星型将涉及多个维度表。
                 emptyStarJoinPlan
               } else {
                 factTable +: eligibleDimPlans
@@ -168,23 +162,25 @@ object StarSchemaDetection extends PredicateHelper {
   }
 
   /**
-   * Determines if a column referenced by a base table access is a primary key.
-   * A column is a PK if it is not nullable and has unique values.
-   * To determine if a column has unique values in the absence of informational
-   * RI constraints, the number of distinct values is compared to the total
-   * number of rows in the table. If their relative difference
-   * is within the expected limits (i.e. 2 * spark.sql.statistics.ndv.maxError based
-   * on TPC-DS data results), the column is assumed to have unique values.
+   * 确定基表访问所引用的列是否为主键。
+   * 如果列不可为空且具有唯一值，则该列为pk。
+   * 若要确定某列在没有信息RI约束的情况下是否具有唯一值，
+   * 请将不同值的数目与表中的总行数进行比较。
+   * 如果它们的相对差在预期范围内(i.e. 2 * spark.sql.statistics.ndv.maxError based
+   * on TPC-DS data results), 假定列具有唯一的值。
    */
   private def isUnique(
       column: Attribute,
       plan: LogicalPlan): Boolean = plan match {
+    
     case PhysicalOperation(_, _, t: LeafNode) =>
+      //找到leafNode列
       val leafCol = findLeafNodeCol(column, plan)
       leafCol match {
         case Some(col) if t.outputSet.contains(col) =>
           val stats = t.stats
           stats.rowCount match {
+            //如果列大于0
             case Some(rowCount) if rowCount >= 0 =>
               if (stats.attributeStats.nonEmpty && stats.attributeStats.contains(col)) {
                 val colStats = stats.attributeStats.get(col).get
@@ -193,7 +189,7 @@ object StarSchemaDetection extends PredicateHelper {
                 } else {
                   val distinctCount = colStats.distinctCount.get
                   val relDiff = math.abs((distinctCount.toDouble / rowCount.toDouble) - 1.0d)
-                  // ndvMaxErr adjusted based on TPCDS 1TB data results
+                  // 基于TPCDS 1TB数据结果调整的ndvmax错误
                   relDiff <= conf.ndvMaxError * 2
                 }
               } else {
