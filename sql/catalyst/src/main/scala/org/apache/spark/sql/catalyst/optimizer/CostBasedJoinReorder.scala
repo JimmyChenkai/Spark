@@ -28,9 +28,9 @@ import org.apache.spark.sql.internal.SQLConf
 
 
 /**
- * Cost-based join reorder.
- * We may have several join reorder algorithms in the future. This class is the entry of these
- * algorithms, and chooses which one to use.
+ * 基于成本的联接重新排序。我们将来可能会有几种连接重排序算法。这个类是这些算法的入口，并选择要使用的算法。
+ * 继承了 Rule[LogicalPlan]
+ * 实现apply方法
  */
 object CostBasedJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
 
@@ -41,15 +41,15 @@ object CostBasedJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
       plan
     } else {
       val result = plan transformDown {
-        // Start reordering with a joinable item, which is an InnerLike join with conditions.
-        // Avoid reordering if a join hint is present.
+        // 用一个可连接项开始重新排序，它是一个与条件类似的内部连接。
+        // 如果存在连接提示，请避免重新排序。
         case j @ Join(_, _, _: InnerLike, Some(cond), JoinHint.NONE) =>
           reorder(j, j.output)
         case p @ Project(projectList, Join(_, _, _: InnerLike, Some(cond), JoinHint.NONE))
           if projectList.forall(_.isInstanceOf[Attribute]) =>
           reorder(p, p.output)
       }
-      // After reordering is finished, convert OrderedJoin back to Join.
+      // 重新排序完成后，将orderedjoin转换回join。
       result transform {
         case OrderedJoin(left, right, jt, cond) => Join(left, right, jt, cond, JoinHint.NONE)
       }
@@ -59,15 +59,15 @@ object CostBasedJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
   private def reorder(plan: LogicalPlan, output: Seq[Attribute]): LogicalPlan = {
     val (items, conditions) = extractInnerJoins(plan)
     val result =
-      // Do reordering if the number of items is appropriate and join conditions exist.
-      // We also need to check if costs of all items can be evaluated.
+      // 如果项目数合适并且存在连接条件，则重新排序。
+      // 我们还需要检查所有项目的成本是否可以评估。
       if (items.size > 2 && items.size <= conf.joinReorderDPThreshold && conditions.nonEmpty &&
           items.forall(_.stats.rowCount.isDefined)) {
         JoinReorderDP.search(conf, items, conditions, output)
       } else {
         plan
       }
-    // Set consecutive join nodes ordered.
+    // 设置连续连接节点的顺序。
     replaceWithOrderedJoin(result)
   }
 
