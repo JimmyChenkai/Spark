@@ -203,8 +203,7 @@ object StarSchemaDetection extends PredicateHelper {
   }
 
   /**
-   * Given a column over a base table access, it returns
-   * the leaf node column from which the input column is derived.
+   * 给定基表访问上的列，它将返回派生输入列的叶节点列。
    */
   @tailrec
   private def findLeafNodeCol(
@@ -225,8 +224,7 @@ object StarSchemaDetection extends PredicateHelper {
   }
 
   /**
-   * Checks if a column has statistics.
-   * The column is assumed to be over a base table access.
+   * 检查列是否有统计信息。假定列位于基表访问之上。
    */
   private def hasStatistics(
       column: Attribute,
@@ -243,8 +241,7 @@ object StarSchemaDetection extends PredicateHelper {
   }
 
   /**
-   * Returns the join predicates between two input plans. It only
-   * considers basic comparison operators.
+   * 返回两个输入计划之间的联接谓词。它只考虑基本的比较运算符。
    */
   @inline
   private def findJoinConditions(
@@ -261,22 +258,21 @@ object StarSchemaDetection extends PredicateHelper {
   }
 
   /**
-   * Checks if a star join is a selective join. A star join is assumed
-   * to be selective if there are local predicates on the dimension
-   * tables.
+   * 检查星形联接是否为选择性联接。
+   * 如果维度表上有本地谓词，则假定星型联接是选择性的。
    */
   private def isSelectiveStarJoin(
       dimTables: Seq[LogicalPlan],
       conditions: Seq[Expression]): Boolean = dimTables.exists {
     case plan @ PhysicalOperation(_, p, _: LeafNode) =>
-      // Checks if any condition applies to the dimension tables.
-      // Exclude the IsNotNull predicates until predicate selectivity is available.
-      // In most cases, this predicate is artificially introduced by the Optimizer
-      // to enforce nullability constraints.
+    // 检查是否有任何条件适用于维度表。
+    // 排除isnotnull谓词，直到谓词选择性可用。
+    // 在大多数情况下，这个谓词是由优化器人工引入的
+    // 强制为空性约束。
       val localPredicates = conditions.filterNot(_.isInstanceOf[IsNotNull])
         .exists(canEvaluate(_, plan))
 
-      // Checks if there are any predicates pushed down to the base table access.
+      // 检查是否有任何谓词被下推到基表访问。
       val pushedDownPredicates = p.nonEmpty && !p.forall(_.isInstanceOf[IsNotNull])
 
       localPredicates || pushedDownPredicates
@@ -284,13 +280,13 @@ object StarSchemaDetection extends PredicateHelper {
   }
 
   /**
-   * Helper case class to hold (plan, rowCount) pairs.
+   * 要保留（plan，rowcount）对的helper case类。
    */
   private case class TableAccessCardinality(plan: LogicalPlan, size: Option[BigInt])
 
   /**
-   * Returns the cardinality of a base table access. A base table access represents
-   * a LeafNode, or Project or Filter operators above a LeafNode.
+   * 返回基表访问的基数。
+   * 基表访问表示leafnode或leafnode上方的项目或筛选器运算符。
    */
   private def getTableAccessCardinality(
       input: LogicalPlan): Option[BigInt] = input match {
@@ -304,12 +300,12 @@ object StarSchemaDetection extends PredicateHelper {
   }
 
   /**
-   * Reorders a star join based on heuristics. It is called from ReorderJoin if CBO is disabled.
-   *   1) Finds the star join with the largest fact table.
-   *   2) Places the fact table the driving arm of the left-deep tree.
-   *     This plan avoids large table access on the inner, and thus favor hash joins.
-   *   3) Applies the most selective dimensions early in the plan to reduce the amount of
-   *      data flow.
+   * 基于启发式重新排序星形联接。如果禁用cbo，则从reorderjoin调用。
+   *   1) 以事实表最大连接数为判断星型链接方式
+   *   2) 将事实表放置在左深树的 driving arm上。
+   *     这个计划避免了内部的大表访问，因此有利于哈希连接。
+   *   3) 在计划的早期应用最有选择的维度，以减少数据流的数量。
+   *      
    */
   def reorderStarJoins(
       input: Seq[(LogicalPlan, InnerLike)],
@@ -318,8 +314,8 @@ object StarSchemaDetection extends PredicateHelper {
 
     val emptyStarJoinPlan = Seq.empty[(LogicalPlan, InnerLike)]
 
-    // Find the eligible star plans. Currently, it only returns
-    // the star join with the largest fact table.
+    // 找到符合条件的星型计划。目前，它只返回
+    // 星形与最大事实表联接。
     val eligibleJoins = input.collect{ case (plan, Inner) => plan }
     val starPlan = findStarJoins(eligibleJoins, conditions)
 
@@ -328,10 +324,9 @@ object StarSchemaDetection extends PredicateHelper {
     } else {
       val (factTable, dimTables) = (starPlan.head, starPlan.tail)
 
-      // Only consider selective joins. This case is detected by observing local predicates
-      // on the dimension tables. In a star schema relationship, the join between the fact and the
-      // dimension table is a FK-PK join. Heuristically, a selective dimension may reduce
-      // the result of a join.
+      //只考虑选择性连接。这种情况是通过观察本地谓词来检测的在维度表上
+      //在星型模式关系中，事实和维度表是FK-PK联接
+      //从启发式的角度来看，选择维度可能会减少联接的结果。
       if (isSelectiveStarJoin(dimTables, conditions)) {
         val reorderDimTables = dimTables.map { plan =>
           TableAccessCardinality(plan, getTableAccessCardinality(plan))
