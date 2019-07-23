@@ -112,31 +112,18 @@ case class OrderedJoin(
 }
 
 /**
- * Reorder the joins using a dynamic programming algorithm. This implementation is based on the
- * paper: Access Path Selection in a Relational Database Management System.
+ * 使用动态编程算法对连接重新排序。此实现基于
+ * 论文：关系数据库管理系统中的访问路径选择。
  * http://www.inf.ed.ac.uk/teaching/courses/adbs/AccessPath.pdf
+ * 
+ * 首先，我们将所有项（基本连接节点）放入级别0，然后构建所有双向连接。
+ * 在0级计划的1级（单个项目），然后从计划构建所有3向联接
+ * 在前面的级别（双向联接和单个项），然后是四向联接…等等，直到我们
+ * 构建所有N向连接，并在其中选择最佳计划。
  *
- * First we put all items (basic joined nodes) into level 0, then we build all two-way joins
- * at level 1 from plans at level 0 (single items), then build all 3-way joins from plans
- * at previous levels (two-way joins and single items), then 4-way joins ... etc, until we
- * build all n-way joins and pick the best plan among them.
  *
- * When building m-way joins, we only keep the best plan (with the lowest cost) for the same set
- * of m items. E.g., for 3-way joins, we keep only the best plan for items {A, B, C} among
- * plans (A J B) J C, (A J C) J B and (B J C) J A.
- * We also prune cartesian product candidates when building a new plan if there exists no join
- * condition involving references from both left and right. This pruning strategy significantly
- * reduces the search space.
- * E.g., given A J B J C J D with join conditions A.k1 = B.k1 and B.k2 = C.k2 and C.k3 = D.k3,
- * plans maintained for each level are as follows:
- * level 0: p({A}), p({B}), p({C}), p({D})
- * level 1: p({A, B}), p({B, C}), p({C, D})
- * level 2: p({A, B, C}), p({B, C, D})
- * level 3: p({A, B, C, D})
- * where p({A, B, C, D}) is the final output plan.
- *
- * For cost evaluation, since physical costs for operators are not available currently, we use
- * cardinalities and sizes to compute costs.
+ * 对于成本评估，由于运营商的实际成本目前不可用，因此我们使用
+ * 计算成本的基数和大小。
  */
 object JoinReorderDP extends PredicateHelper with Logging {
 
@@ -235,13 +222,13 @@ object JoinReorderDP extends PredicateHelper with Logging {
   }
 
   /**
-   * Builds a new JoinPlan if the following conditions hold:
-   * - the sets of items contained in left and right sides do not overlap.
-   * - there exists at least one join condition involving references from both sides.
-   * - if star-join filter is enabled, allow the following combinations:
-   *         1) (oneJoinPlan U otherJoinPlan) is a subset of star-join
-   *         2) star-join is a subset of (oneJoinPlan U otherJoinPlan)
-   *         3) (oneJoinPlan U otherJoinPlan) is a subset of non star-join
+   * 建立一个新的Joinplan if the following conditions hold:
+   * - 左右两侧包含的项目集不重叠。
+   * - 至少存在一个涉及两侧引用的联接条件。
+   * - 如果启用了星形联接筛选器，则允许以下组合：
+   *         1) (oneJoinPlan U otherJoinPlan)是star-join的子集
+   *         2) star-join 是(oneJoinPlan U otherJoinPlan)的子集
+   *         3) (oneJoinPlan U otherJoinPlan) 是non star-join的子集
    *
    * @param oneJoinPlan One side JoinPlan for building a new JoinPlan.
    * @param otherJoinPlan The other side JoinPlan for building a new join node.
@@ -260,17 +247,17 @@ object JoinReorderDP extends PredicateHelper with Logging {
       filters: Option[JoinGraphInfo]): Option[JoinPlan] = {
 
     if (oneJoinPlan.itemIds.intersect(otherJoinPlan.itemIds).nonEmpty) {
-      // Should not join two overlapping item sets.
+      // 不应联接两个重叠的项集。
       return None
     }
 
     if (filters.isDefined) {
-      // Apply star-join filter, which ensures that tables in a star schema relationship
-      // are planned together. The star-filter will eliminate joins among star and non-star
-      // tables until the star joins are built. The following combinations are allowed:
-      // 1. (oneJoinPlan U otherJoinPlan) is a subset of star-join
-      // 2. star-join is a subset of (oneJoinPlan U otherJoinPlan)
-      // 3. (oneJoinPlan U otherJoinPlan) is a subset of non star-join
+      // 应用星型联接筛选器，以确保星型架构关系中的表
+      // 计划在一起。星型滤波器将消除星型和非星型之间的连接。
+      // 直到建立星形联接为止的表。允许以下组合：
+      // 1。（OneJoinPlan或OtherJoinPlan）是星形联接的子集。
+      // 2。星形联接是（OneJoinPlan或OtherJoinPlan）的子集
+      // 3。（OneJoinPlan或OtherJoinPlan）是非星形联接的子集
       val isValidJoinCombination =
         JoinReorderDPFilters.starJoinFilter(oneJoinPlan.itemIds, otherJoinPlan.itemIds,
           filters.get)
@@ -284,12 +271,12 @@ object JoinReorderDP extends PredicateHelper with Logging {
       .filterNot(r => canEvaluate(r, otherPlan))
       .filter(e => e.references.subsetOf(onePlan.outputSet ++ otherPlan.outputSet))
     if (joinConds.isEmpty) {
-      // Cartesian product is very expensive, so we exclude them from candidate plans.
-      // This also significantly reduces the search space.
+      // 笛卡尔产品非常昂贵，所以我们将其排除在候选计划之外。
+      // 这也大大减少了搜索空间。
       return None
     }
 
-    // Put the deeper side on the left, tend to build a left-deep tree.
+    // 把较深的一面放在左边，倾向于建一棵左深的树。
     val (left, right) = if (oneJoinPlan.itemIds.size >= otherJoinPlan.itemIds.size) {
       (onePlan, otherPlan)
     } else {
@@ -308,8 +295,8 @@ object JoinReorderDP extends PredicateHelper with Logging {
       }
 
     val itemIds = oneJoinPlan.itemIds.union(otherJoinPlan.itemIds)
-    // Now the root node of onePlan/otherPlan becomes an intermediate join (if it's a non-leaf
-    // item), so the cost of the new join should also include its own cost.
+    // 现在，oneplan/otherplan的根节点成为中间联接（如果它是非叶节点item），
+    // 因此新联接的成本也应该包括它自己的成本。
     val newPlanCost = oneJoinPlan.planCost + oneJoinPlan.rootCost(conf) +
       otherJoinPlan.planCost + otherJoinPlan.rootCost(conf)
     Some(JoinPlan(itemIds, newPlan, collectedJoinConds, newPlanCost))
@@ -319,7 +306,7 @@ object JoinReorderDP extends PredicateHelper with Logging {
   type JoinPlanMap = Map[Set[Int], JoinPlan]
 
   /**
-   * Partial join order in a specific level.
+   * 特定级别中的部分联接顺序。
    *
    * @param itemIds Set of item ids participating in this partial plan.
    * @param plan The plan tree with the lowest cost for these items found so far.
@@ -332,13 +319,13 @@ object JoinReorderDP extends PredicateHelper with Logging {
       joinConds: Set[Expression],
       planCost: Cost) {
 
-    /** Get the cost of the root node of this plan tree. */
+    /**获取此计划树的根节点的成本。*/
     def rootCost(conf: SQLConf): Cost = {
       if (itemIds.size > 1) {
         val rootStats = plan.stats
         Cost(rootStats.rowCount.get, rootStats.sizeInBytes)
       } else {
-        // If the plan is a leaf item, it has zero cost.
+        // 如果计划是叶项目，则成本为零。
         Cost(0, 0)
       }
     }
@@ -357,7 +344,7 @@ object JoinReorderDP extends PredicateHelper with Logging {
 }
 
 /**
- * This class defines the cost model for a plan.
+ * 此类定义计划的成本模型。
  * @param card Cardinality (number of rows).
  * @param size Size in bytes.
  */
