@@ -22,15 +22,15 @@ import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.internal.SQLConf
 
 /**
- * Replaces [[ResolvedHint]] operators from the plan. Move the [[HintInfo]] to associated [[Join]]
- * operators, otherwise remove it if no [[Join]] operator is matched.
+ * 从计划中替换[[ ResolvedHint ]]运算符。将[[ HintInfo ]] 移动到关联的[[ Join ]]运算符，
+ * 否则如果没有[[ Join ]]运算符匹配则删除它。
  */
 object EliminateResolvedHint extends Rule[LogicalPlan] {
 
   private val hintErrorHandler = SQLConf.get.hintErrorHandler
 
-  // This is also called in the beginning of the optimization phase, and as a result
-  // is using transformUp rather than resolveOperators.
+  //这也是在优化阶段开始时调用的结果
+  //正在使用transformUp而不是resolveOperators。
   def apply(plan: LogicalPlan): LogicalPlan = {
     val pulledUp = plan transformUp {
       case j: Join if j.hint == JoinHint.NONE =>
@@ -47,18 +47,17 @@ object EliminateResolvedHint extends Rule[LogicalPlan] {
   }
 
   /**
-   * Combine a list of [[HintInfo]]s into one [[HintInfo]].
+   * 将[[ HintInfo ]] 列表合并为一个[[ HintInfo ]]。
    */
   private def mergeHints(hints: Seq[HintInfo]): Option[HintInfo] = {
     hints.reduceOption((h1, h2) => h1.merge(h2, hintErrorHandler))
   }
 
   /**
-   * Extract all hints from the plan, returning a list of extracted hints and the transformed plan
-   * with [[ResolvedHint]] nodes removed. The returned hint list comes in top-down order.
-   * Note that hints can only be extracted from under certain nodes. Those that cannot be extracted
-   * in this method will be cleaned up later by this rule, and may emit warnings depending on the
-   * configurations.
+   * 从计划中提取所有提示，返回提取的提示列表和转换后的计划
+   * 删除了[[ ResolvedHint ]]节点。返回的提示列表以自上而下的顺序排列。
+   * 请注意，提示只能从某些节点下提取。那些无法提取的
+   * 此方法稍后将被此规则清理，并可能会发出警告，具体取决于配置。
    */
   private[sql] def extractHintsFromPlan(plan: LogicalPlan): (LogicalPlan, Seq[HintInfo]) = {
     plan match {
@@ -69,8 +68,8 @@ object EliminateResolvedHint extends Rule[LogicalPlan] {
         val (plan, hints) = extractHintsFromPlan(u.child)
         (u.withNewChildren(Seq(plan)), hints)
       // TODO revisit this logic:
-      // except and intersect are semi/anti-joins which won't return more data then
-      // their left argument, so the broadcast hint should be propagated here
+      // 除了和交叉是半连接/反连接，然后不会返回更多数据
+      // 他们的左参数，所以广播提示应该在这里传播
       case i: Intersect =>
         val (plan, hints) = extractHintsFromPlan(i.left)
         (i.copy(left = plan), hints)
