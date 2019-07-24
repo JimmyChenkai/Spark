@@ -23,10 +23,10 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 
 /**
- * This aims to handle a nested column aliasing pattern inside the `ColumnPruning` optimizer rule.
- * If a project or its child references to nested fields, and not all the fields
- * in a nested attribute are used, we can substitute them by alias attributes; then a project
- * of the nested fields as aliases on the children of the child will be created.
+ * 这旨在处理`ColumnPruning`优化器规则中的嵌套列别名模式。
+ * 如果项目或其子项引用嵌套字段，而不是所有字段
+ * 在使用嵌套属性时，我们可以用别名属性替换它们; 然后是一个项目
+ * 将创建嵌套字段的*作为子项的子项的别名。
  */
 object NestedColumnAliasing {
 
@@ -39,7 +39,7 @@ object NestedColumnAliasing {
   }
 
   /**
-   * Replace nested columns to prune unused nested columns later.
+   * 替换嵌套列以便稍后修剪未使用的嵌套列。
    */
   def replaceToAliases(
       plan: LogicalPlan,
@@ -52,7 +52,7 @@ object NestedColumnAliasing {
   }
 
   /**
-   * Return a replaced project list.
+   * 返回已更换的项目列表。
    */
   private def getNewProjectList(
       projectList: Seq[NamedExpression],
@@ -64,7 +64,7 @@ object NestedColumnAliasing {
   }
 
   /**
-   * Return a plan with new children replaced with aliases.
+   * 返回一个计划，将新的孩子替换为别名。
    */
   private def replaceChildrenWithAliases(
       plan: LogicalPlan,
@@ -75,7 +75,7 @@ object NestedColumnAliasing {
   }
 
   /**
-   * Returns true for those operators that project can be pushed through.
+   * 对于可以推送项目的那些运算符，返回true。
    */
   private def canProjectPushThrough(plan: LogicalPlan) = plan match {
     case _: GlobalLimit => true
@@ -86,9 +86,9 @@ object NestedColumnAliasing {
   }
 
   /**
-   * Return root references that are individually accessed as a whole, and `GetStructField`s
-   * or `GetArrayStructField`s which on top of other `ExtractValue`s or special expressions.
-   * Check `SelectedField` to see which expressions should be listed here.
+   * 返回作为整体单独访问的根引用，以及`GetStructField`s
+   * 或`GetArrayStructField'，它位于其他`ExtractValue或特殊表达式之上。
+   * 检查`SelectedField`以查看此处应列出的表达式。
    */
   private def collectRootReferenceAndExtractValue(e: Expression): Seq[Expression] = e match {
     case _: AttributeReference => Seq(e)
@@ -102,10 +102,10 @@ object NestedColumnAliasing {
   }
 
   /**
-   * Return two maps in order to replace nested fields to aliases.
+   * 返回两个映射以将嵌套字段替换为别名。
    *
-   * 1. ExtractValue -> Alias: A new alias is created for each nested field.
-   * 2. ExprId -> Seq[Alias]: A reference attribute has multiple aliases pointing it.
+   * 1. ExtractValue  - >别名：为每个嵌套字段创建一个新别名。
+   * 2.ExprId  - > Seq [Alias]：引用属性有多个别名指向它。
    */
   private def getAliasSubMap(projectList: Seq[NamedExpression])
     : Option[(Map[ExtractValue, Alias], Map[ExprId, Seq[Alias]])] = {
@@ -119,15 +119,15 @@ object NestedColumnAliasing {
       .filter(!_.references.subsetOf(AttributeSet(otherRootReferences)))
       .groupBy(_.references.head)
       .flatMap { case (attr, nestedFields: Seq[ExtractValue]) =>
-        // Each expression can contain multiple nested fields.
-        // Note that we keep the original names to deliver to parquet in a case-sensitive way.
+        //每个表达式可以包含多个嵌套字段。
+        //请注意，我们保留原始名称以区分大小写的方式传递给镶木地板。
         val nestedFieldToAlias = nestedFields.distinct.map { f =>
           val exprId = NamedExpression.newExprId
           (f, Alias(f, s"_gen_alias_${exprId.id}")(exprId, Seq.empty, None))
         }
 
-        // If all nested fields of `attr` are used, we don't need to introduce new aliases.
-        // By default, ColumnPruning rule uses `attr` already.
+        //如果使用了`attr`的所有嵌套字段，我们不需要引入新的别名。
+        //默认情况下，ColumnPruning规则已使用`attr`。
         if (nestedFieldToAlias.nonEmpty &&
             nestedFieldToAlias.length < totalFieldNum(attr.dataType)) {
           Some(attr.exprId -> nestedFieldToAlias)
@@ -144,9 +144,8 @@ object NestedColumnAliasing {
   }
 
   /**
-   * Return total number of fields of this type. This is used as a threshold to use nested column
-   * pruning. It's okay to underestimate. If the number of reference is bigger than this, the parent
-   * reference is used instead of nested field references.
+   * 返回此类型的字段总数。这用作使用嵌套列的阈值修剪。可以低估。
+   * 如果引用的数量大于此，则为父级使用引用而不是嵌套字段引用。
    */
   private def totalFieldNum(dataType: DataType): Int = dataType match {
     case _: AtomicType => 1
