@@ -43,7 +43,7 @@ object PropagateEmptyRelation extends Rule[LogicalPlan] with PredicateHelper wit
   private def empty(plan: LogicalPlan) =
     LocalRelation(plan.output, data = Seq.empty, isStreaming = plan.isStreaming)
 
-  // Construct a project list from plan's output, while the value is always NULL.
+  //从计划的输出构造项目列表，而值始终为NULL。
   private def nullValueProjectList(plan: LogicalPlan): Seq[NamedExpression] =
     plan.output.map{ a => Alias(cast(Literal(null), a.dataType), a.name)(a.exprId) }
 
@@ -53,9 +53,9 @@ object PropagateEmptyRelation extends Rule[LogicalPlan] with PredicateHelper wit
     case p: Union if p.children.forall(isEmptyLocalRelation) =>
       empty(p)
 
-    // Joins on empty LocalRelations generated from streaming sources are not eliminated
-    // as stateful streaming joins need to perform other state management operations other than
-    // just processing the input data.
+    //不会消除从流式源生成的空LocalRelations的连接
+    //因为有状态的流连接需要执行除了以外的其他状态管理操作
+    //只处理输入数据
     case p @ Join(_, _, joinType, _, _)
         if !p.children.exists(_.isStreaming) =>
       val isLeftEmpty = isEmptyLocalRelation(p.left)
@@ -63,8 +63,8 @@ object PropagateEmptyRelation extends Rule[LogicalPlan] with PredicateHelper wit
       if (isLeftEmpty || isRightEmpty) {
         joinType match {
           case _: InnerLike => empty(p)
-          // Intersect is handled as LeftSemi by `ReplaceIntersectWithSemiJoin` rule.
-          // Except is handled as LeftAnti by `ReplaceExceptWithAntiJoin` rule.
+          // Intersect通过`ReplaceIntersectWithSemiJoin`规则作为LeftSemi处理。
+          // 除了被`ReplaceExceptWithAntiJoin`规则作为LeftAnti处理。
           case LeftOuter | LeftSemi | LeftAnti if isLeftEmpty => empty(p)
           case LeftSemi if isRightEmpty => empty(p)
           case LeftAnti if isRightEmpty => p.left
@@ -89,20 +89,20 @@ object PropagateEmptyRelation extends Rule[LogicalPlan] with PredicateHelper wit
       case _: LocalLimit => empty(p)
       case _: Repartition => empty(p)
       case _: RepartitionByExpression => empty(p)
-      // An aggregate with non-empty group expression will return one output row per group when the
-      // input to the aggregate is not empty. If the input to the aggregate is empty then all groups
-      // will be empty and thus the output will be empty. If we're working on batch data, we can
-      // then treat the aggregate as redundant.
+      //具有非空组表达式的聚合将在每个组返回一个输出行
+      //输入聚合不是空的。如果聚合的输入为空，则为所有组
+      //将为空，因此输出将为空。如果我们正在处理批量数据，我们可以
+      //然后将聚合视为冗余。
       //
-      // If the aggregate is over streaming data, we may need to update the state store even if no
-      // new rows are processed, so we can't eliminate the node.
+      //如果聚合是通过流数据，我们可能需要更新状态存储，即使没有
+      //处理新行，因此我们无法消除节点。
       //
-      // If the grouping expressions are empty, however, then the aggregate will always produce a
-      // single output row and thus we cannot propagate the EmptyRelation.
+      //但是，如果分组表达式为空，则聚合将始终生成一个
+      //单输出行，因此我们无法传播EmptyRelation。
       //
-      // Aggregation on empty LocalRelation generated from a streaming source is not eliminated
-      // as stateful streaming aggregation need to perform other state management operations other
-      // than just processing the input data.
+      //不会消除从流式源生成的空LocalRelation的聚合
+      //因为有状态流聚合需要执行其他状态管理操作
+      //而不仅仅是处理输入数据。
       case Aggregate(ge, _, _) if ge.nonEmpty && !p.isStreaming => empty(p)
       // Generators like Hive-style UDTF may return their records within `close`.
       case Generate(_: Explode, _, _, _, _, _) => empty(p)
