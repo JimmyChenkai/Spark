@@ -42,37 +42,37 @@ import org.apache.spark.sql.types._
  * binary `UnsafeRow` and compare the binary data directly. Different NaNs have different binary
  * representation, and the same thing happens for -0.0 and 0.0.
  *
- * This rule normalizes NaN and -0.0 in window partition keys, join keys and aggregate grouping
- * keys.
+ *此规则规范化窗口分区键，连接键和聚合分组中的NaN和-0.0
+ *钥匙。
  *
- * Ideally we should do the normalization in the physical operators that compare the
- * binary `UnsafeRow` directly. We don't need this normalization if the Spark SQL execution engine
- * is not optimized to run on binary data. This rule is created to simplify the implementation, so
- * that we have a single place to do normalization, which is more maintainable.
+ *理想情况下，我们应该在比较的物理运算符中进行归一化
+ *二进制`UnsafeRow`直接。如果是Spark SQL执行引擎，我们不需要这种规范化
+ *未针对二进制数据运行进行优化。创建此规则是为了简化实现，因此
+ *我们有一个地方可以进行标准化，这更易于维护。
  *
- * Note that, this rule must be executed at the end of optimizer, because the optimizer may create
- * new joins(the subquery rewrite) and new join conditions(the join reorder).
+ *请注意，此规则必须在优化程序结束时执行，因为优化程序可能会创建
+ *新连接（子查询重写）和新连接条件（连接重新排序）。
  */
 object NormalizeFloatingNumbers extends Rule[LogicalPlan] {
 
   def apply(plan: LogicalPlan): LogicalPlan = plan match {
-    // A subquery will be rewritten into join later, and will go through this rule
-    // eventually. Here we skip subquery, as we only need to run this rule once.
+    //子查询稍后将被重写为join，并将通过此规则
+    //最终 这里我们跳过子查询，因为我们只需要运行一次这个规则。
     case _: Subquery => plan
 
     case _ => plan transform {
       case w: Window if w.partitionSpec.exists(p => needNormalize(p.dataType)) =>
-        // Although the `windowExpressions` may refer to `partitionSpec` expressions, we don't need
-        // to normalize the `windowExpressions`, as they are executed per input row and should take
-        // the input row as it is.
+        //虽然`windowExpressions`可能引用`partitionSpec`表达式，但我们不需要
+        //规范化`windowExpressions`，因为它们是按输入行执行的，应该采用
+        //输入行原样。
         w.copy(partitionSpec = w.partitionSpec.map(normalize))
 
-      // Only hash join and sort merge join need the normalization. Here we catch all Joins with
-      // join keys, assuming Joins with join keys are always planned as hash join or sort merge
-      // join. It's very unlikely that we will break this assumption in the near future.
+      //只有散列连接和排序合并连接需要规范化。在这里，我们捕获所有联接
+      //连接键，假设连接键的连接总是计划为散列连接或排序合并
+      //加入 我们不太可能在不久的将来打破这一假设。
       case j @ ExtractEquiJoinKeys(_, leftKeys, rightKeys, condition, _, _, _)
-          // The analyzer guarantees left and right joins keys are of the same data type. Here we
-          // only need to check join keys of one side.
+          //分析器保证左右连接键具有相同的数据类型。在这里，我们
+          //只需要检查一方的连接键。
           if leftKeys.exists(k => needNormalize(k.dataType)) =>
         val newLeftJoinKeys = leftKeys.map(normalize)
         val newRightJoinKeys = rightKeys.map(normalize)
@@ -81,9 +81,9 @@ object NormalizeFloatingNumbers extends Rule[LogicalPlan] {
         } ++ condition
         j.copy(condition = Some(newConditions.reduce(And)))
 
-      // TODO: ideally Aggregate should also be handled here, but its grouping expressions are
-      // mixed in its aggregate expressions. It's unreliable to change the grouping expressions
-      // here. For now we normalize grouping expressions in `AggUtils` during planning.
+      // TODO：理想情况下，聚合也应该在这里处理，但它的分组表达式是
+      //在其聚合表达式中混合。更改分组表达式是不可靠的
+      //这里 现在我们在规划期间规范化`AggUtils`中的分组表达式。
     }
   }
 
@@ -91,7 +91,7 @@ object NormalizeFloatingNumbers extends Rule[LogicalPlan] {
     case FloatType | DoubleType => true
     case StructType(fields) => fields.exists(f => needNormalize(f.dataType))
     case ArrayType(et, _) => needNormalize(et)
-    // Currently MapType is not comparable and analyzer should fail earlier if this case happens.
+    //当前MapType无法比较，如果发生这种情况，分析器应该提前失败。
     case _: MapType =>
       throw new IllegalStateException("grouping/join/window partition keys cannot be map type.")
     case _ => false
