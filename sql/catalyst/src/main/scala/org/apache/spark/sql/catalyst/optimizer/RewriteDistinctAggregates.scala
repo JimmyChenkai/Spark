@@ -75,29 +75,25 @@ import org.apache.spark.sql.types.IntegerType
  *       LocalTableScan [...]
  * }}}
  *
- * The rule does the following things here:
- * 1. Expand the data. There are three aggregation groups in this query:
- *    i. the non-distinct group;
- *    ii. the distinct 'cat1 group;
- *    iii. the distinct 'cat2 group.
- *    An expand operator is inserted to expand the child data for each group. The expand will null
- *    out all unused columns for the given group; this must be done in order to ensure correctness
- *    later on. Groups can by identified by a group id (gid) column added by the expand operator.
- * 2. De-duplicate the distinct paths and aggregate the non-aggregate path. The group by clause of
- *    this aggregate consists of the original group by clause, all the requested distinct columns
- *    and the group id. Both de-duplication of distinct column and the aggregation of the
- *    non-distinct group take advantage of the fact that we group by the group id (gid) and that we
- *    have nulled out all non-relevant columns the given group.
- * 3. Aggregating the distinct groups and combining this with the results of the non-distinct
- *    aggregation. In this step we use the group id to filter the inputs for the aggregate
- *    functions. The result of the non-distinct group are 'aggregated' by using the first operator,
- *    it might be more elegant to use the native UDAF merge mechanism for this in the future.
+ * *规则在此处执行以下操作：
+ * 1. 扩展数据。此查询中有三个聚合组：
+ *    i. 非重复分组;
+ *    ii. cat1去重分组;
+ *    iii. cat2去重分组.
+ *    插入展开运算符以展开每个组的子数据。展开将为null删除给定组的所有未使用的列;
+ *   必须这样做才能确保正确性稍后的。 组可以通过扩展运算符添加的组ID（gid）列来标识。
+ * 2. 重复删除不同的路径并聚合非聚合路径。分组的此聚合由原始group by子句，所有请求的不同列组成和组ID。
+ *    不同列的重复数据删除和聚合Non-distinct 分组利用我们按群组ID（gid）和我们分组的事实已经排除了给定组的所有不相关列。
+ * 3. 聚合不同的组并将其与非不同组的结果相结合聚合。
+ *    在此步骤中，我们使用组ID过滤聚合的输入功能。
+ *    使用第一个运算符“聚合”非不同组的结果，
+ *    将来使用本机UDAF合并机制可能会更优雅。
  *
- * This rule duplicates the input data by two or more times (# distinct groups + an optional
- * non-distinct group). This will put quite a bit of memory pressure of the used aggregate and
- * exchange operators. Keeping the number of distinct groups as low as possible should be priority,
- * we could improve this in the current rule by applying more advanced expression canonicalization
- * techniques.
+ *此规则将输入数据重复两次或更多次（#exvinition groups +可选
+ *非独特组）。这会对使用过的聚合物产生相当大的内存压力
+ *交换运营商。保持尽可能低的不同群体的数量应该是优先事项，
+ *我们可以通过应用更高级的表达式规范化来改进当前规则中的这一点
+ *技术。
  */
 object RewriteDistinctAggregates extends Rule[LogicalPlan] {
 
@@ -107,33 +103,33 @@ object RewriteDistinctAggregates extends Rule[LogicalPlan] {
 
   def rewrite(a: Aggregate): Aggregate = {
 
-    // Collect all aggregate expressions.
+    //收集所有聚合表达式。
     val aggExpressions = a.aggregateExpressions.flatMap { e =>
       e.collect {
         case ae: AggregateExpression => ae
       }
     }
 
-    // Extract distinct aggregate expressions.
+    //提取不同的聚合表达式。
     val distinctAggGroups = aggExpressions.filter(_.isDistinct).groupBy { e =>
         val unfoldableChildren = e.aggregateFunction.children.filter(!_.foldable).toSet
         if (unfoldableChildren.nonEmpty) {
-          // Only expand the unfoldable children
+          //只展开可展开的孩子
           unfoldableChildren
         } else {
-          // If aggregateFunction's children are all foldable
-          // we must expand at least one of the children (here we take the first child),
-          // or If we don't, we will get the wrong result, for example:
-          // count(distinct 1) will be explained to count(1) after the rewrite function.
-          // Generally, the distinct aggregateFunction should not run
-          // foldable TypeCheck for the first child.
+          //如果aggregateFunction的子节点都是可折叠的
+          //我们必须扩展至少一个孩子（这里我们带第一个孩子），
+          //或者如果我们不这样做，我们将得到错误的结果，例如：
+          // count（distinct 1）将在重写函数后解释为count（1）。
+          //通常，不应运行不同的aggregateFunction
+          //第一个孩子可折叠的TypeCheck。
           e.aggregateFunction.children.take(1).toSet
         }
     }
 
-    // Aggregation strategy can handle queries with a single distinct group.
+    //聚合策略可以处理具有单个不同组的查询。
     if (distinctAggGroups.size > 1) {
-      // Create the attributes for the grouping id and the group by clause.
+      //为分组ID和group by子句创建属性。
       val gid = AttributeReference("gid", IntegerType, nullable = false)()
       val groupByMap = a.groupingExpressions.collect {
         case ne: NamedExpression => ne -> ne.toAttribute
@@ -141,7 +137,7 @@ object RewriteDistinctAggregates extends Rule[LogicalPlan] {
       }
       val groupByAttrs = groupByMap.map(_._2)
 
-      // Functions used to modify aggregate functions and their inputs.
+      //用于修改聚合函数及其输入的函数。
       def evalWithinGroup(id: Literal, e: Expression) = If(EqualTo(gid, id), e, nullify(e))
       def patchAggregateFunctionChildren(
           af: AggregateFunction)(
@@ -150,24 +146,24 @@ object RewriteDistinctAggregates extends Rule[LogicalPlan] {
         af.withNewChildren(newChildren).asInstanceOf[AggregateFunction]
       }
 
-      // Setup unique distinct aggregate children.
+      //设置唯一的不同聚合子项。
       val distinctAggChildren = distinctAggGroups.keySet.flatten.toSeq.distinct
       val distinctAggChildAttrMap = distinctAggChildren.map(expressionAttributePair)
       val distinctAggChildAttrs = distinctAggChildAttrMap.map(_._2)
 
-      // Setup expand & aggregate operators for distinct aggregate expressions.
+      //安装程序展开和聚合不同聚合表达式的运算符。
       val distinctAggChildAttrLookup = distinctAggChildAttrMap.toMap
       val distinctAggOperatorMap = distinctAggGroups.toSeq.zipWithIndex.map {
         case ((group, expressions), i) =>
           val id = Literal(i + 1)
 
-          // Expand projection
+          //展开投影
           val projection = distinctAggChildren.map {
             case e if group.contains(e) => e
             case e => nullify(e)
           } :+ id
 
-          // Final aggregate
+          //最终聚合
           val operators = expressions.map { e =>
             val af = e.aggregateFunction
             val naf = patchAggregateFunctionChildren(af) { x =>
