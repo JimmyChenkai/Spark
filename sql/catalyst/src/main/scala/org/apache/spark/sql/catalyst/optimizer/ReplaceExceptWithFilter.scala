@@ -25,32 +25,36 @@ import org.apache.spark.sql.catalyst.rules.Rule
 
 
 /**
- * If one or both of the datasets in the logical [[Except]] operator are purely transformed using
- * [[Filter]], this rule will replace logical [[Except]] operator with a [[Filter]] operator by
- * flipping the filter condition of the right child.
+ *如果使用逻辑[[ Except ]]运算符中的一个或两个数据集进行纯转换
+* [[ Filter ]]，此规则将用[[ Filter ]]运算符替换逻辑[[ Except ]]运算符
+ *翻转正确孩子的过滤条件。
  * {{{
- *   SELECT a1, a2 FROM Tab1 WHERE a2 = 12 EXCEPT SELECT a1, a2 FROM Tab1 WHERE a1 = 5
- *   ==>  SELECT DISTINCT a1, a2 FROM Tab1 WHERE a2 = 12 AND (a1 is null OR a1 <> 5)
- * }}}
+ * SELECT a1，a2 FROM Tab1 WHERE a2 = 12除了SELECT a1，a2 FROM Tab1 WHERE a1 = 5
+ * ==> SELECT DISTINCT a1，a2 FROM Tab1 WHERE a2 = 12 AND（a1为空或a1 <> 5）
+ *}}}
  *
- * Note:
- * Before flipping the filter condition of the right node, we should:
- * 1. Combine all it's [[Filter]].
- * 2. Update the attribute references to the left node;
- * 3. Add a Coalesce(condition, False) (to take into account of NULL values in the condition).
+ * 注意：
+ * 在翻转右侧节点的过滤条件之前，我们应该：
+ * 1.合并所有[[ 过滤器 ]]。
+ * 2.更新左侧节点的属性引用;
+ * 3.添加Coalesce（条件，False）（考虑条件中的NULL值）。
  */
 object ReplaceExceptWithFilter extends Rule[LogicalPlan] {
 
   def apply(plan: LogicalPlan): LogicalPlan = {
+    //根据表达式替换Filter，如果不成功则返回不优化，反之继续优化
     if (!plan.conf.replaceExceptWithFilter) {
       return plan
     }
-
+    //开始转换
     plan.transform {
+      //若LogicalPlan是可识别的，则继续
       case e @ Except(left, right, false) if isEligible(left, right) =>
+        //合并
         val filterCondition = combineFilters(skipProject(right)).asInstanceOf[Filter].condition
         if (filterCondition.deterministic) {
           transformCondition(left, filterCondition).map { c =>
+            //去重
             Distinct(Filter(Not(c), left))
           }.getOrElse {
             e
@@ -67,15 +71,15 @@ object ReplaceExceptWithFilter extends Rule[LogicalPlan] {
       val rewrittenCondition = condition.transform {
         case a: AttributeReference => attributeNameMap(a.name)
       }
-      // We need to consider as False when the condition is NULL, otherwise we do not return those
-      // rows containing NULL which are instead filtered in the Except right plan
+      // 当条件为NULL时我们需要考虑为False，否则我们不会返回那些
+      // 包含NULL的行，而不是在Except右计划中进行过滤
       Some(Coalesce(Seq(rewrittenCondition, Literal.FalseLiteral)))
     } else {
       None
     }
   }
 
-  // TODO: This can be further extended in the future.
+  // TODO: 将来可以进一步扩展。
   private def isEligible(left: LogicalPlan, right: LogicalPlan): Boolean = (left, right) match {
     case (_, right @ (Project(_, _: Filter) | Filter(_, _))) => verifyConditions(left, right)
     case _ => false
