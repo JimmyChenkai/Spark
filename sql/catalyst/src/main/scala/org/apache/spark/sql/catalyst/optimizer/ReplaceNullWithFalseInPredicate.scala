@@ -28,26 +28,26 @@ import org.apache.spark.util.Utils
 
 
 /**
- * A rule that replaces `Literal(null, BooleanType)` with `FalseLiteral`, if possible, in the search
- * condition of the WHERE/HAVING/ON(JOIN) clauses, which contain an implicit Boolean operator
- * "(search condition) = TRUE". The replacement is only valid when `Literal(null, BooleanType)` is
- * semantically equivalent to `FalseLiteral` when evaluating the whole search condition.
+*如果可能，在搜索中用`FalseLiteral`替换`Literal（null，BooleanType）`的规则
+ * WHERE / HAVING / ON（JOIN）子句的条件，包含隐式布尔运算符
+*“（搜索条件）= TRUE”。替换仅在`Literal（null，BooleanType）`时有效
+ *在评估整个搜索条件时，语义上等同于`FalseLiteral`。
  *
- * Please note that FALSE and NULL are not exchangeable in most cases, when the search condition
- * contains NOT and NULL-tolerant expressions. Thus, the rule is very conservative and applicable
- * in very limited cases.
+ * 请注意，在搜索条件下，大多数情况下FALSE和NULL都不可交换
+ * 包含NOT和NULL容错表达式。因此，该规则非常保守和适用
+ * 在非常有限的情况下。
  *
- * For example, `Filter(Literal(null, BooleanType))` is equal to `Filter(FalseLiteral)`.
+ * 例如，`Filter（Literal（null，BooleanType））`等于`Filter（FalseLiteral）`。
  *
- * Another example containing branches is `Filter(If(cond, FalseLiteral, Literal(null, _)))`;
- * this can be optimized to `Filter(If(cond, FalseLiteral, FalseLiteral))`, and eventually
- * `Filter(FalseLiteral)`.
+ * 另一个包含分支的例子是`Filter（If（cond，FalseLiteral，Literal（null，_）））`;
+ * 这可以优化为`过滤（If（cond，FalseLiteral，FalseLiteral））`，最终
+ * `过滤器（FalseLiteral）`。
  *
- * Moreover, this rule also transforms predicates in all [[If]] expressions as well as branch
- * conditions in all [[CaseWhen]] expressions, even if they are not part of the search conditions.
+ * 此外，此规则还会转换所有[[ If ]]表达式和分支中的谓词
+ * 所有[[ CaseWhen ]]表达式中的条件，即使它们不是搜索条件的一部分。
  *
- * For example, `Project(If(And(cond, Literal(null)), Literal(1), Literal(2)))` can be simplified
- * into `Project(Literal(2))`.
+ * 例如，`Project（If（And（cond，Literal（null）），Literal（1），Literal（2）））`可以简化
+ * 进入`Project（Literal（2））`。
  */
 object ReplaceNullWithFalseInPredicate extends Rule[LogicalPlan] {
 
@@ -75,12 +75,12 @@ object ReplaceNullWithFalseInPredicate extends Rule[LogicalPlan] {
   }
 
   /**
-   * Recursively traverse the Boolean-type expression to replace
-   * `Literal(null, BooleanType)` with `FalseLiteral`, if possible.
+   *递归遍历布尔类型表达式以替换
+   *`Literal（null，BooleanType）`和`FalseLiteral`，如果可能的话。
    *
-   * Note that `transformExpressionsDown` can not be used here as we must stop as soon as we hit
-   * an expression that is not [[CaseWhen]], [[If]], [[And]], [[Or]] or
-   * `Literal(null, BooleanType)`.
+   *请注意，`transformExpressionsDown`不能在这里使用，因为我们必须在击中后立即停止
+   *表达式不是[[ CaseWhen ]]，[[ If ]]，[[ And ]]，[[ Or ]]或
+   *`Literal（null，BooleanType）`。
    */
   private def replaceNullWithFalse(e: Expression): Expression = e match {
     case Literal(null, BooleanType) =>
