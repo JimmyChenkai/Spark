@@ -100,11 +100,11 @@ object PushDownLeftSemiAntiJoin extends Rule[LogicalPlan] with PredicateHelper {
   }
 
   /**
-   * Check if we can safely push a join through a project or union by making sure that attributes
-   * referred in join condition do not contain the same attributes as the plan they are moved
-   * into. This can happen when both sides of join refers to the same source (self join). This
-   * function makes sure that the join condition refers to attributes that are not ambiguous (i.e
-   * present in both the legs of the join) or else the resultant plan will be invalid.
+   * 通过确保属性，检查我们是否可以通过项目或联合安全地推送连接
+   * 在连接条件中引用的属性与它们移动的计划不包含相同的属性进入。
+   * 当连接的两端引用相同的源（自连接）时，可能会发生这种情况。这个
+   * function确保连接条件引用不明确的属性（即
+   * 出现在联接的两条腿中）或者由此产生的计划无效。
    */
   private def canPushThroughCondition(
       plans: Seq[LogicalPlan],
@@ -131,10 +131,10 @@ object PushDownLeftSemiAntiJoin extends Rule[LogicalPlan] with PredicateHelper {
       val (pushDown, stayUp) = splitConjunctivePredicates(join.condition.get)
         .partition(canPushDownPredicate)
 
-      // Check if the remaining predicates do not contain columns from the right hand side of the
-      // join. Since the remaining predicates will be kept as a filter over the operator under join,
-      // this check is necessary after the left-semi/anti join is pushed down. The reason is, for
-      // this kind of join, we only output from the left leg of the join.
+      //检查剩余的谓词是否不包含右侧的列
+      //加入 由于剩余的谓词将作为过滤器保留在加入的运算符之上，
+      //在按下左半/反连接后，必须进行此检查。原因是，为
+      //这种连接，我们只从连接的左腿输出。
       val referRightSideCols = AttributeSet(stayUp.toSet).intersect(join.right.outputSet).nonEmpty
 
       if (pushDown.isEmpty || referRightSideCols)  {
@@ -142,16 +142,16 @@ object PushDownLeftSemiAntiJoin extends Rule[LogicalPlan] with PredicateHelper {
       } else {
         val newPlan = join.left.withNewChildren(Seq(join.copy(
           left = join.left.children.head, condition = Some(makeJoinCondition(pushDown)))))
-        // If there is no more filter to stay up, return the new plan that has join pushed down.
+        // 如果没有更多过滤器可以停留，请返回已按下加入的新计划。
         if (stayUp.isEmpty) {
           newPlan
         } else {
           join.joinType match {
-            // In case of Left semi join, the part of the join condition which does not refer to
-            // to attributes of the grandchild are kept as a Filter above.
+            //在左半连接的情况下，连接条件的一部分没有引用
+            //将孙子的属性保存为上面的过滤器。
             case LeftSemi => Filter(stayUp.reduce(And), newPlan)
-            // In case of left-anti join, the join is pushed down only when the entire join
-            // condition is eligible to be pushed down to preserve the semantics of left-anti join.
+             //如果是左反连接，则仅在整个连接时按下连接
+            //条件有资格被下推以保留left-anti join的语义。
             case _ => join
           }
         }
@@ -170,16 +170,16 @@ object PushDownLeftSemiAntiJoin extends Rule[LogicalPlan] with PredicateHelper {
  *  4) RightOuter
  *
  * TODO:
- * Currently this rule can push down the left semi or left anti joins to either
- * left or right leg of the child join. This matches the behaviour of `PushPredicateThroughJoin`
- * when the lefi semi or left anti join is in expression form. We need to explore the possibility
- * to push the left semi/anti joins to both legs of join if the join condition refers to
- * both left and right legs of the child join.
+ * 目前此规则可以将左半部分或左部反连接向下推
+ * 孩子的左腿或右腿加入。这符合`PushPredicateThroughJoin`的行为
+ * 当lefi半连接或左反连接处于表达形式时。我们需要探索这种可能性
+ * 如果连接条件指的话，将左半连接/反连接推到连接的两条腿
+ * 孩子的左腿和右腿都加入了。
  */
 object PushLeftSemiLeftAntiThroughJoin extends Rule[LogicalPlan] with PredicateHelper {
   /**
-   * Define an enumeration to identify whether a LeftSemi/LeftAnti join can be pushed down to
-   * the left leg or the right leg of the join.
+   * 定义一个枚举，以确定是否可以将LeftSemi / LeftAnti连接推送到
+   * 连接的左腿或右腿。
    */
   object PushdownDirection extends Enumeration {
     val TO_LEFT_BRANCH, TO_RIGHT_BRANCH, NONE = Value
@@ -193,7 +193,7 @@ object PushLeftSemiLeftAntiThroughJoin extends Rule[LogicalPlan] with PredicateH
   }
 
   /**
-   * Determine which side of the join a LeftSemi/LeftAnti join can be pushed to.
+   * 确定可以将LeftSemi / LeftAnti连接的哪一侧连接到。
    */
   private def pushTo(leftChild: Join, rightChild: LogicalPlan, joinCond: Option[Expression]) = {
     val left = leftChild.left
@@ -209,22 +209,22 @@ object PushLeftSemiLeftAntiThroughJoin extends Rule[LogicalPlan] with PredicateH
         rest.partition(_.references.subsetOf(right.outputSet ++ rightOutput))
 
       if (rest.isEmpty && leftConditions.nonEmpty) {
-        // When the join conditions can be computed based on the left leg of
-        // leftsemi/anti join then push the leftsemi/anti join to the left side.
+        // 当连接条件可以根据左腿计算时
+        // leftsemi / anti join然后将leftsemi / anti join推到左侧。
         PushdownDirection.TO_LEFT_BRANCH
       } else if (leftConditions.isEmpty && rightConditions.nonEmpty && commonConditions.isEmpty) {
-        // When the join conditions can be computed based on the attributes from right leg of
-        // leftsemi/anti join then push the leftsemi/anti join to the right side.
+        // 当可以根据右腿的属性计算连接条件时
+        // leftsemi / anti join然后将leftsemi / anti join推到右侧。
         PushdownDirection.TO_RIGHT_BRANCH
       } else {
         PushdownDirection.NONE
       }
     } else {
       /**
-       * When the join condition is empty,
-       * 1) if this is a left outer join or inner join, push leftsemi/anti join down
-       *    to the left leg of join.
-       * 2) if a right outer join, to the right leg of join,
+       *当连接条件为空时，
+       * 1）如果这是左外连接或内连接，则按下leftsemi / anti join
+       * 加入左。
+       * 2）如果右外连接，连接，
        */
       joinType match {
         case _: InnerLike | LeftOuter =>
@@ -238,7 +238,7 @@ object PushLeftSemiLeftAntiThroughJoin extends Rule[LogicalPlan] with PredicateH
   }
 
   def apply(plan: LogicalPlan): LogicalPlan = plan transform {
-    // push LeftSemi/LeftAnti down into the join below
+    //将LeftSemi / LeftAnti向下推入下面的连接
     case j @ Join(AllowedJoin(left), right, LeftSemiOrAnti(joinType), joinCond, parentHint) =>
       val (childJoinType, childLeft, childRight, childCondition, childHint) =
         (left.joinType, left.left, left.right, left.condition, left.hint)
@@ -247,16 +247,16 @@ object PushLeftSemiLeftAntiThroughJoin extends Rule[LogicalPlan] with PredicateH
       action match {
         case PushdownDirection.TO_LEFT_BRANCH
           if (childJoinType == LeftOuter || childJoinType.isInstanceOf[InnerLike]) =>
-          // push down leftsemi/anti join to the left table
+          //将leftsemi / anti join下拉到左表
           val newLeft = Join(childLeft, right, joinType, joinCond, parentHint)
           Join(newLeft, childRight, childJoinType, childCondition, childHint)
         case PushdownDirection.TO_RIGHT_BRANCH
           if (childJoinType == RightOuter || childJoinType.isInstanceOf[InnerLike]) =>
-          // push down leftsemi/anti join to the right table
+          //将leftsemi / anti join下推到右边的表格
           val newRight = Join(childRight, right, joinType, joinCond, parentHint)
           Join(childLeft, newRight, childJoinType, childCondition, childHint)
         case _ =>
-          // Do nothing
+          //什么都不做
           j
       }
   }
