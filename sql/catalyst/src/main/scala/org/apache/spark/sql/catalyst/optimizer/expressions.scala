@@ -99,6 +99,7 @@ object ConstantPropagation extends Rule[LogicalPlan] with PredicateHelper {
   private def traverse(condition: Expression, replaceChildren: Boolean)
     : (Option[Expression], EqualityPredicates) =
     condition match {
+      //如果[[ And ]]的子项是[[ EqualTo ]]或[[ EqualNullSafe ]]，则传播映射of attribute =>常量。
       case e @ EqualTo(left: AttributeReference, right: Literal) => (None, Seq(((left, right), e)))
       case e @ EqualTo(left: Literal, right: AttributeReference) => (None, Seq(((right, left), e)))
       case e @ EqualNullSafe(left: AttributeReference, right: Literal) =>
@@ -106,6 +107,8 @@ object ConstantPropagation extends Rule[LogicalPlan] with PredicateHelper {
       case e @ EqualNullSafe(left: Literal, right: AttributeReference) =>
         (None, Seq(((right, left), e)))
       case a: And =>
+        //递归遍历每个子节点并获得传播的映射
+        //如果当前节点不是另一个[[ And ]]的子节点，则替换所有出现的节点具有相应常量值的属性。
         val (newLeft, equalityPredicatesLeft) = traverse(a.left, replaceChildren = false)
         val (newRight, equalityPredicatesRight) = traverse(a.right, replaceChildren = false)
         val equalityPredicates = equalityPredicatesLeft ++ equalityPredicatesRight
@@ -120,8 +123,9 @@ object ConstantPropagation extends Rule[LogicalPlan] with PredicateHelper {
           }
         }
         (newSelf, equalityPredicates)
+      //配[[ Or ]]或[[ Not ]]时，递归遍历每个子节点，传播空映射
       case o: Or =>
-        // Ignore the EqualityPredicates from children since they are only propagated through And.
+        // 略来自孩子的EqualityPredicates，因为他们只通过And传播。
         val (newLeft, _) = traverse(o.left, replaceChildren = true)
         val (newRight, _) = traverse(o.right, replaceChildren = true)
         val newSelf = if (newLeft.isDefined || newRight.isDefined) {
@@ -131,9 +135,10 @@ object ConstantPropagation extends Rule[LogicalPlan] with PredicateHelper {
         }
         (newSelf, Seq.empty)
       case n: Not =>
-        // Ignore the EqualityPredicates from children since they are only propagated through And.
+        // 忽略来自孩子的EqualityPredicates，因为他们只通过And传播。
         val (newChild, _) = traverse(n.child, replaceChildren = true)
         (newChild.map(Not), Seq.empty)
+      //否则，停止遍历并传播空映射
       case _ => (None, Seq.empty)
     }
 
@@ -152,7 +157,7 @@ object ConstantPropagation extends Rule[LogicalPlan] with PredicateHelper {
 }
 
 /**
- * Reorder associative integral-type operators and fold all constants into one.
+ * 新排序关联整型运算符并将所有常量折叠成一个。
  */
 object ReorderAssociativeOperator extends Rule[LogicalPlan] {
   private def flattenAdd(
@@ -179,9 +184,8 @@ object ReorderAssociativeOperator extends Rule[LogicalPlan] {
 
   def apply(plan: LogicalPlan): LogicalPlan = plan transform {
     case q: LogicalPlan =>
-      // We have to respect aggregate expressions which exists in grouping expressions when plan
-      // is an Aggregate operator, otherwise the optimized expression could not be derived from
-      // grouping expressions.
+      //我们必须尊重计划时分组表达式中存在的聚合表达式
+      //是Aggregate运算符，否则无法从中派生优化表达式分组表达式。
       val groupingExpressionSet = collectGroupingExpressions(q)
       q transformExpressionsDown {
       case a: Add if a.deterministic && a.dataType.isInstanceOf[IntegralType] =>
