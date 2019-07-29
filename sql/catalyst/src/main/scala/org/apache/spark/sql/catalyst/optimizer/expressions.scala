@@ -637,7 +637,7 @@ object FoldablePropagation extends Rule[LogicalPlan] {
   }
 
   /**
-   * Whitelist of all [[UnaryNode]]s for which allow foldable propagation.
+   *允许可折叠传播的所有[[ UnaryNode ]]的白名单。
    */
   private def canPropagateFoldables(u: UnaryNode): Boolean = u match {
     case _: Project => true
@@ -662,7 +662,7 @@ object FoldablePropagation extends Rule[LogicalPlan] {
 
 
 /**
- * Removes [[Cast Casts]] that are unnecessary because the input is already the correct type.
+ * 删除不必要的[[ Cast Casts ]]，因为输入已经是正确的类型。
  */
 object SimplifyCasts extends Rule[LogicalPlan] {
   def apply(plan: LogicalPlan): LogicalPlan = plan transformAllExpressions {
@@ -678,7 +678,7 @@ object SimplifyCasts extends Rule[LogicalPlan] {
 
 
 /**
- * Removes nodes that are not necessary.
+ * 删除不必要的节点。
  */
 object RemoveDispensableExpressions extends Rule[LogicalPlan] {
   def apply(plan: LogicalPlan): LogicalPlan = plan transformAllExpressions {
@@ -688,15 +688,19 @@ object RemoveDispensableExpressions extends Rule[LogicalPlan] {
 
 
 /**
- * Removes the inner case conversion expressions that are unnecessary because
- * the inner conversion is overwritten by the outer one.
+  *删除不必要的内部案例转换表达式，因为
+ *内部转换被外部转换覆盖。
  */
 object SimplifyCaseConversionExpressions extends Rule[LogicalPlan] {
   def apply(plan: LogicalPlan): LogicalPlan = plan transform {
     case q: LogicalPlan => q transformExpressionsUp {
+      //如果子节点大写，父节点则不需要再转一次大写
       case Upper(Upper(child)) => Upper(child)
+      //如果字节点是小写，父节点是大写，则直接子节点大写
       case Upper(Lower(child)) => Upper(child)
+      //如果子节点是大写，父节点是小写，则直接子节点小写
       case Lower(Upper(child)) => Lower(child)
+      //如果子节点是小写，父节点还是小写，则直接子节点小写
       case Lower(Lower(child)) => Lower(child)
     }
   }
@@ -704,7 +708,7 @@ object SimplifyCaseConversionExpressions extends Rule[LogicalPlan] {
 
 
 /**
- * Combine nested [[Concat]] expressions.
+ * 组合嵌套[[ Concat ]]表达式。
  */
 object CombineConcats extends Rule[LogicalPlan] {
 
@@ -715,9 +719,9 @@ object CombineConcats extends Rule[LogicalPlan] {
       stack.pop() match {
         case Concat(children) =>
           stack.pushAll(children.reverse)
-        // If `spark.sql.function.concatBinaryAsString` is false, nested `Concat` exprs possibly
-        // have `Concat`s with binary output. Since `TypeCoercion` casts them into strings,
-        // we need to handle the case to combine all nested `Concat`s.
+        //如果`spark.sql.function.concatBinaryAsString`为false，则可能嵌套`Concat` exprs
+        //有Concat的二进制输出。由于`TypeCoercion`将它们转换为字符串，
+        //我们需要处理这个案例来组合所有嵌套的`Concat`s。
         case c @ Cast(Concat(children), StringType, _) =>
           val newChildren = children.map { e => c.copy(child = e) }
           stack.pushAll(newChildren.reverse)
@@ -728,6 +732,7 @@ object CombineConcats extends Rule[LogicalPlan] {
     Concat(flattened)
   }
 
+  //判断是否有嵌套concat
   private def hasNestedConcats(concat: Concat): Boolean = concat.children.exists {
     case c: Concat => true
     case c @ Cast(Concat(children), StringType, _) => true
