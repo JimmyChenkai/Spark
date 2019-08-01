@@ -50,8 +50,8 @@ class SparkPlanner(
       BasicOperators :: Nil)
 
   /**
-   * Override to add extra planning strategies to the planner. These strategies are tried after
-   * the strategies defined in [[ExperimentalMethods]], and before the regular strategies.
+   * 给planner添加额外的策略，可以覆盖之前策略.
+   * 这些自定义策略是在[[ExperimentalMethods]]之后和常规策略之前。
    */
   def extraPlanningStrategies: Seq[Strategy] = Nil
 
@@ -62,23 +62,23 @@ class SparkPlanner(
   }
 
   override protected def prunePlans(plans: Iterator[SparkPlan]): Iterator[SparkPlan] = {
-    // TODO: We will need to prune bad plans when we improve plan space exploration
-    //       to prevent combinatorial explosion.
+    // TODO：当我们改进计划空间探索时，我们需要修剪糟糕的计划
+    //        防止组合爆炸
     plans
   }
 
-  /**
-   * Used to build table scan operators where complex projection and filtering are done using
-   * separate physical operators.  This function returns the given scan operator with Project and
-   * Filter nodes added only when needed.  For example, a Project operator is only used when the
-   * final desired output requires complex expressions to be evaluated or when columns can be
-   * further eliminated out after filtering has been done.
+   /**
+   *用于构建使用复杂投影和过滤的表扫描操作符
+   *独立的物理运营商。此函数返回给定的扫描运算符与Project和
+   *仅在需要时添加过滤节点。例如，Project运算符仅在使用时使用
+   *最终所需输出需要评估复杂表达式或列可以
+   *在过滤完成后进一步消除。
    *
-   * The `prunePushedDownFilters` parameter is used to remove those filters that can be optimized
-   * away by the filter pushdown optimization.
+   *`prunePushedDownFilters`参数用于删除可以优化的过滤器
+   *通过过滤器下推优化。
    *
-   * The required attributes for both filtering and expression evaluation are passed to the
-   * provided `scanBuilder` function so that it can avoid unnecessary column materialization.
+   *过滤和表达式评估所需的属性将传递给
+   *提供`scanBuilder`功能，以避免不必要的列实现。
    */
   def pruneFilterProject(
       projectList: Seq[NamedExpression],
@@ -91,17 +91,17 @@ class SparkPlanner(
     val filterCondition: Option[Expression] =
       prunePushedDownFilters(filterPredicates).reduceLeftOption(catalyst.expressions.And)
 
-    // Right now we still use a projection even if the only evaluation is applying an alias
-    // to a column.  Since this is a no-op, it could be avoided. However, using this
-    // optimization with the current implementation would change the output schema.
-    // TODO: Decouple final output schema from expression evaluation so this copy can be
-    // avoided safely.
+    //即使唯一的评估是应用别名，我们现在仍然使用投影
+    //到一个专栏。由于这是一个无操作，因此可以避免。但是，使用这个
+    //使用当前实现进行优化会改变输出模式。
+    // TODO：从表达式求值中去掉最终输出模式，这样这个副本就可以了
+    //安全避免
 
     if (AttributeSet(projectList.map(_.toAttribute)) == projectSet &&
         filterSet.subsetOf(projectSet)) {
-      // When it is possible to just use column pruning to get the right projection and
-      // when the columns of this projection are enough to evaluate all filter conditions,
-      // just do a scan followed by a filter, with no extra project.
+      //当可以使用列修剪来获得正确的投影时
+      //当此投影的列足以评估所有过滤条件时，
+      //只需进行扫描，然后进行过滤，无需额外项目。
       val scan = scanBuilder(projectList.asInstanceOf[Seq[Attribute]])
       filterCondition.map(FilterExec(_, scan)).getOrElse(scan)
     } else {
