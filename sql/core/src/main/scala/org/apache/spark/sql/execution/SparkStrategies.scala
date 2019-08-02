@@ -77,24 +77,30 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
   }
 
   /**
-   * Plans special cases of limit operators.
+   * 特殊Limit操作的执行计划
    */
   object SpecialLimits extends Strategy {
     override def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
+     //如果是rootPlan
       case ReturnAnswer(rootPlan) => rootPlan match {
+       //Sort
         case Limit(IntegerLiteral(limit), Sort(order, true, child))
             if limit < conf.topKSortFallbackThreshold =>
           TakeOrderedAndProjectExec(limit, order, child.output, planLater(child)) :: Nil
+       //Project
         case Limit(IntegerLiteral(limit), Project(projectList, Sort(order, true, child)))
             if limit < conf.topKSortFallbackThreshold =>
           TakeOrderedAndProjectExec(limit, order, projectList, planLater(child)) :: Nil
+       
         case Limit(IntegerLiteral(limit), child) =>
           CollectLimitExec(limit, planLater(child)) :: Nil
         case other => planLater(other) :: Nil
       }
+     //如果是非rootPlan
       case Limit(IntegerLiteral(limit), Sort(order, true, child))
           if limit < conf.topKSortFallbackThreshold =>
         TakeOrderedAndProjectExec(limit, order, child.output, planLater(child)) :: Nil
+     //project
       case Limit(IntegerLiteral(limit), Project(projectList, Sort(order, true, child)))
           if limit < conf.topKSortFallbackThreshold =>
         TakeOrderedAndProjectExec(limit, order, projectList, planLater(child)) :: Nil
@@ -137,28 +143,27 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
   object JoinSelection extends Strategy with PredicateHelper {
 
     /**
-     * Matches a plan whose output should be small enough to be used in broadcast join.
+     * 匹配一个计划，其输出应足够小，以便在广播连接中使用。
      */
     private def canBroadcast(plan: LogicalPlan): Boolean = {
       plan.stats.sizeInBytes >= 0 && plan.stats.sizeInBytes <= conf.autoBroadcastJoinThreshold
     }
 
     /**
-     * Matches a plan whose single partition should be small enough to build a hash table.
+     * 匹配一个计划，其单个分区应足够小，以构建哈希表。
      *
-     * Note: this assume that the number of partition is fixed, requires additional work if it's
-     * dynamic.
+     * 注意：这假设分区数是固定的，如果需要额外的工作动态
      */
     private def canBuildLocalHashMap(plan: LogicalPlan): Boolean = {
       plan.stats.sizeInBytes < conf.autoBroadcastJoinThreshold * conf.numShufflePartitions
     }
 
     /**
-     * Returns whether plan a is much smaller (3X) than plan b.
+     *返回计划a是否比计划b小得多（3X）。
      *
-     * The cost to build hash map is higher than sorting, we should only build hash map on a table
-     * that is much smaller than other one. Since we does not have the statistic for number of rows,
-     * use the size of bytes here as estimation.
+     *构建哈希映射的成本高于排序，我们应该只在表上构建哈希映射
+     *比其他人小得多。由于我们没有行数统计，
+     *使用此处的字节大小作为估计。
      */
     private def muchSmaller(a: LogicalPlan, b: LogicalPlan): Boolean = {
       a.stats.sizeInBytes * 3 <= b.stats.sizeInBytes
@@ -180,8 +185,8 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
         left: LogicalPlan,
         right: LogicalPlan): Option[BuildSide] = {
       if (wantToBuildLeft && wantToBuildRight) {
-        // returns the smaller side base on its estimated physical size, if we want to build the
-        // both sides.
+        //如果我们想构建它，则返回较小的基础估计的物理大小
+        //双方
         Some(getSmallerSide(left, right))
       } else if (wantToBuildLeft) {
         Some(BuildLeft)
@@ -391,9 +396,9 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
   }
 
   /**
-   * Used to plan streaming aggregation queries that are computed incrementally as part of a
-   * [[StreamingQuery]]. Currently this rule is injected into the planner
-   * on-demand, only when planning in a [[org.apache.spark.sql.execution.streaming.StreamExecution]]
+   * 用于计划作为a的一部分递增计算的流聚合查询
+   * [[ StreamingQuery ]]。目前，此规则已注入计划员
+   * 按需，仅在[[ org.apache.spark.sql.execution.streaming.StreamExecution ]]中进行规划时
    */
   object StatefulAggregationStrategy extends Strategy {
     override def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
@@ -433,7 +438,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
   }
 
   /**
-   * Used to plan the streaming deduplicate operator.
+   * 用于规划流式重复数据删除运算符。
    */
   object StreamingDeduplicationStrategy extends Strategy {
     override def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
