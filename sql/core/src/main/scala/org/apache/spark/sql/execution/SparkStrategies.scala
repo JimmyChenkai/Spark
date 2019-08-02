@@ -42,10 +42,9 @@ import org.apache.spark.sql.streaming.{OutputMode, StreamingQuery}
 import org.apache.spark.sql.types.StructType
 
 /**
- * Converts a logical plan into zero or more SparkPlans.  This API is exposed for experimenting
- * with the query planner and is not designed to be stable across spark releases.  Developers
- * writing libraries should instead consider using the stable APIs provided in
- * [[org.apache.spark.sql.sources]]
+  *将逻辑计划转换为零个或多个SparkPlans。此API公开用于实验
+ *使用查询规划器，并不是为了在spark版本中保持稳定。开发者
+ *编写库应考虑使用中提供的稳定API
  */
 abstract class SparkStrategy extends GenericStrategy[SparkPlan] {
 
