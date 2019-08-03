@@ -185,8 +185,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
         left: LogicalPlan,
         right: LogicalPlan): Option[BuildSide] = {
       if (wantToBuildLeft && wantToBuildRight) {
-        //如果我们想构建它，则返回较小的基础估计的物理大小
-        //双方
+        //如果我们想构建它，则返回较小的基础估计的物理大小双方
         Some(getSmallerSide(left, right))
       } else if (wantToBuildLeft) {
         Some(BuildLeft)
@@ -197,31 +196,32 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       }
     }
 
+    // 获取左右LogicalPlan最小那个
     private def getSmallerSide(left: LogicalPlan, right: LogicalPlan) = {
       if (right.stats.sizeInBytes <= left.stats.sizeInBytes) BuildRight else BuildLeft
     }
-
+    // 左Broadcast hash join
     private def hintToBroadcastLeft(hint: JoinHint): Boolean = {
       hint.leftHint.exists(_.strategy.contains(BROADCAST))
     }
-
+    // 右Broadcast hash join
     private def hintToBroadcastRight(hint: JoinHint): Boolean = {
       hint.rightHint.exists(_.strategy.contains(BROADCAST))
     }
-
+    // 左Shuffle hash join
     private def hintToShuffleHashLeft(hint: JoinHint): Boolean = {
       hint.leftHint.exists(_.strategy.contains(SHUFFLE_HASH))
     }
-
+    // 右Shuffle hash join
     private def hintToShuffleHashRight(hint: JoinHint): Boolean = {
       hint.rightHint.exists(_.strategy.contains(SHUFFLE_HASH))
     }
-
+    // Shuffle sort merge join 
     private def hintToSortMergeJoin(hint: JoinHint): Boolean = {
       hint.leftHint.exists(_.strategy.contains(SHUFFLE_MERGE)) ||
         hint.rightHint.exists(_.strategy.contains(SHUFFLE_MERGE))
     }
-
+    // Broadcast nested loop join
     private def hintToShuffleReplicateNL(hint: JoinHint): Boolean = {
       hint.leftHint.exists(_.strategy.contains(SHUFFLE_REPLICATE_NL)) ||
         hint.rightHint.exists(_.strategy.contains(SHUFFLE_REPLICATE_NL))
@@ -229,26 +229,29 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
 
     def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
 
-      // If it is an equi-join, we first look at the join hints w.r.t. the following order:
-      //   1. broadcast hint: pick broadcast hash join if the join type is supported. If both sides
-      //      have the broadcast hints, choose the smaller side (based on stats) to broadcast.
-      //   2. sort merge hint: pick sort merge join if join keys are sortable.
-      //   3. shuffle hash hint: We pick shuffle hash join if the join type is supported. If both
-      //      sides have the shuffle hash hints, choose the smaller side (based on stats) as the
-      //      build side.
-      //   4. shuffle replicate NL hint: pick cartesian product if join type is inner like.
+      //如果它是等连接，我们首先按以下顺序查看连接提示：
+      //    1.广播提示：如果支持连接类型，则选择广播散列连接。如果双方
+      //       有广播提示，选择较小的一面（根据统计数据）进行广播。
+      //    2.排序合并提示：如果连接键是可排序的，则选择排序合并连接。
+      //    3. shuffle hash提示：如果支持连接类型，我们选择shuffle hash join。如果两者
+      //       sides有shuffle hash提示，选择较小的一边（基于stats）作为
+      //       构建方。
+      //    4. shuffle复制NL提示：如果连接类型是内部的，则选择笛卡尔积。
       //
-      // If there is no hint or the hints are not applicable, we follow these rules one by one:
-      //   1. Pick broadcast hash join if one side is small enough to broadcast, and the join type
-      //      is supported. If both sides are small, choose the smaller side (based on stats)
-      //      to broadcast.
-      //   2. Pick shuffle hash join if one side is small enough to build local hash map, and is
-      //      much smaller than the other side, and `spark.sql.join.preferSortMergeJoin` is false.
-      //   3. Pick sort merge join if the join keys are sortable.
-      //   4. Pick cartesian product if join type is inner like.
-      //   5. Pick broadcast nested loop join as the final solution. It may OOM but we don't have
-      //      other choice.
+      //如果没有提示或提示不适用，我们将逐一遵循这些规则：
+      //    1.如果一边小到可以广播，则选择广播散列连接，以及连接类型
+      //       受支持 如果双方都很小，请选择较小的一侧（根据统计数据）
+      //       播出
+      //    2.如果一边小到足以构建本地哈希映射，则选择shuffle hash join，并且是
+      //       比另一边小得多，而`spark.sql.join.preferSortMergeJoin`是假的。
+      //    3.如果连接键是可排序的，请选择排序合并连接。
+      //    4.如果连接类型是内部的，请选择笛卡尔积。
+      //    5.选择广播嵌套循环连接作为最终解决方案。它可能是OOM，但我们没有
+      //       其他选择。
+     
+      // 抽取出来EquiJoinKeys
       case ExtractEquiJoinKeys(joinType, leftKeys, rightKeys, condition, left, right, hint) =>
+        //BHJ创建
         def createBroadcastHashJoin(buildLeft: Boolean, buildRight: Boolean) = {
           val wantToBuildLeft = canBuildLeft(joinType) && buildLeft
           val wantToBuildRight = canBuildRight(joinType) && buildRight
@@ -263,7 +266,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
               planLater(right)))
           }
         }
-
+        //Shuffle Hash Join创建
         def createShuffleHashJoin(buildLeft: Boolean, buildRight: Boolean) = {
           val wantToBuildLeft = canBuildLeft(joinType) && buildLeft
           val wantToBuildRight = canBuildRight(joinType) && buildRight
@@ -278,7 +281,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
               planLater(right)))
           }
         }
-
+        //Shuffle sort merge join 
         def createSortMergeJoin() = {
           if (RowOrdering.isOrderable(leftKeys)) {
             Some(Seq(joins.SortMergeJoinExec(
@@ -287,7 +290,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
             None
           }
         }
-
+        //CartesianProduct
         def createCartesianProduct() = {
           if (joinType.isInstanceOf[InnerLike]) {
             Some(Seq(joins.CartesianProductExec(planLater(left), planLater(right), condition)))
@@ -295,7 +298,12 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
             None
           }
         }
-
+       //混合join入口处
+       //首先判断是否可Broadcast
+       //然后是SheffleHash
+       //接着是SortMerge
+       //再是CartesianProduct
+       //最后是BroadcastNestedLoopJoin
         def createJoinWithoutHint() = {
           createBroadcastHashJoin(canBroadcast(left), canBroadcast(right))
             .orElse {
@@ -310,7 +318,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
             .orElse(createSortMergeJoin())
             .orElse(createCartesianProduct())
             .getOrElse {
-              // This join could be very slow or OOM
+              // 会导致OOM，内存溢出
               val buildSide = getSmallerSide(left, right)
               Seq(joins.BroadcastNestedLoopJoinExec(
                 planLater(left), planLater(right), buildSide, joinType, condition))
@@ -323,33 +331,34 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
           .orElse { if (hintToShuffleReplicateNL(hint)) createCartesianProduct() else None }
           .getOrElse(createJoinWithoutHint())
 
-      // If it is not an equi-join, we first look at the join hints w.r.t. the following order:
-      //   1. broadcast hint: pick broadcast nested loop join. If both sides have the broadcast
-      //      hints, choose the smaller side (based on stats) to broadcast for inner and full joins,
-      //      choose the left side for right join, and choose right side for left join.
-      //   2. shuffle replicate NL hint: pick cartesian product if join type is inner like.
+      //如果它不是equi-join，我们首先按以下顺序查看连接提示：
+      //    1.广播提示：选择广播嵌套循环连接。如果双方都有广播
+      //       提示，选择较小的一面（基于统计数据）来广播内部和完整的连接，
+      //       为左连接选择左侧，为左连接选择右侧。
+      //    2. shuffle复制NL提示：如果连接类型是内部的，则选择笛卡尔积。
       //
-      // If there is no hint or the hints are not applicable, we follow these rules one by one:
-      //   1. Pick broadcast nested loop join if one side is small enough to broadcast. If only left
-      //      side is broadcast-able and it's left join, or only right side is broadcast-able and
-      //      it's right join, we skip this rule. If both sides are small, broadcasts the smaller
-      //      side for inner and full joins, broadcasts the left side for right join, and broadcasts
-      //      right side for left join.
-      //   2. Pick cartesian product if join type is inner like.
-      //   3. Pick broadcast nested loop join as the final solution. It may OOM but we don't have
-      //      other choice. It broadcasts the smaller side for inner and full joins, broadcasts the
-      //      left side for right join, and broadcasts right side for left join.
+      //如果没有提示或提示不适用，我们将逐一遵循这些规则：
+      //    1.如果一边小到足以广播，则选择广播嵌套循环连接。如果只剩下
+      //       side是可广播的，它是左连接，或者只有右侧是可广播的
+      //       这是正确的加入，我们跳过这个规则。如果双方都很小，则广播较小
+      //       用于内部和完全连接的一侧，广播左侧用于右连接，以及广播
+      //       左边连接的右侧
+      //    2.如果连接类型是内部的，请选择笛卡尔积。
+      //    3.选择广播嵌套循环连接作为最终解决方案。它可能是OOM，但我们没有
+      //       其他选择。它播放内部和完整连接的较小的一面，广播
+      //       左侧为右连接，右侧为左连接。
+     
       case logical.Join(left, right, joinType, condition, hint) =>
         val desiredBuildSide = if (joinType.isInstanceOf[InnerLike] || joinType == FullOuter) {
           getSmallerSide(left, right)
         } else {
-          // For perf reasons, `BroadcastNestedLoopJoinExec` prefers to broadcast left side if
-          // it's a right join, and broadcast right side if it's a left join.
-          // TODO: revisit it. If left side is much smaller than the right side, it may be better
-          // to broadcast the left side even if it's a left join.
+          //由于性能原因，`BroadcastNestedLoopJoinExec`更喜欢广播左侧if
+          //这是一个正确的连接，如果是左连接，则播放右侧。
+          // TODO：重新审视它。如果左侧比右侧小得多，那可能会更好
+          //即使是左连接，也要广播左侧。
           if (canBuildLeft(joinType)) BuildLeft else BuildRight
         }
-
+        //创建BroadcastNLJoin
         def createBroadcastNLJoin(buildLeft: Boolean, buildRight: Boolean) = {
           val maybeBuildSide = if (buildLeft && buildRight) {
             Some(desiredBuildSide)
@@ -366,7 +375,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
               planLater(left), planLater(right), buildSide, joinType, condition))
           }
         }
-
+       //创建CartesianProduct
         def createCartesianProduct() = {
           if (joinType.isInstanceOf[InnerLike]) {
             Some(Seq(joins.CartesianProductExec(planLater(left), planLater(right), condition)))
@@ -374,12 +383,15 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
             None
           }
         }
-
+       //混合入口处
+       //首先判断是否BroadcastNLJoin
+       //然后再判断是否是CartesianProduct
+       //BroadcastNestedLoopJoin
         def createJoinWithoutHint() = {
           createBroadcastNLJoin(canBroadcast(left), canBroadcast(right))
             .orElse(createCartesianProduct())
             .getOrElse {
-              // This join could be very slow or OOM
+             //此连接可能非常慢或OOM
               Seq(joins.BroadcastNestedLoopJoinExec(
                 planLater(left), planLater(right), desiredBuildSide, joinType, condition))
             }
