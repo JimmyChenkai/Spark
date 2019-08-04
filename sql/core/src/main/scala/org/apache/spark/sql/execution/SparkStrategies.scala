@@ -414,14 +414,15 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
    */
   object StatefulAggregationStrategy extends Strategy {
     override def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
+     //如果是流式数据 则为NIL
       case _ if !plan.isStreaming => Nil
-
+     //流式时间监听标识
       case EventTimeWatermark(columnName, delay, child) =>
         EventTimeWatermarkExec(columnName, delay, planLater(child)) :: Nil
-
+     //物理计划聚合
       case PhysicalAggregation(
         namedGroupingExpressions, aggregateExpressions, rewrittenResultExpressions, child) =>
-
+     //分组聚合在流式中是非法异常存在
         if (aggregateExpressions.exists(PythonUDF.isGroupedAggPandasUDF)) {
           throw new AnalysisException(
             "Streaming aggregation doesn't support group aggregate pandas UDF")
@@ -429,8 +430,8 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
 
         val stateVersion = conf.getConf(SQLConf.STREAMING_AGGREGATION_STATE_FORMAT_VERSION)
 
-        // Ideally this should be done in `NormalizeFloatingNumbers`, but we do it here because
-        // `groupingExpressions` is not extracted during logical phase.
+        //理想情况下，这应该在`NormalizeFloatingNumbers`中完成，但我们在这里做，因为
+        //在逻辑阶段不提取``groupingExpressions`。
         val normalizedGroupingExpressions = namedGroupingExpressions.map { e =>
           NormalizeFloatingNumbers.normalize(e) match {
             case n: NamedExpression => n
@@ -462,15 +463,16 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
   }
 
   /**
-   * Used to plan the streaming global limit operator for streams in append mode.
-   * We need to check for either a direct Limit or a Limit wrapped in a ReturnAnswer operator,
-   * following the example of the SpecialLimits Strategy above.
-   * Streams with limit in Append mode use the stateful StreamingGlobalLimitExec.
-   * Streams with limit in Complete mode use the stateless CollectLimitExec operator.
-   * Limit is unsupported for streams in Update mode.
+   *用于为追加模式下的流规划流式全局限制运算符。
+   *我们需要检查包含在ReturnAnswer运算符中的直接限制或限制，
+   *遵循上述SpecialLimits策略的示例。
+   *附加模式中具有限制的流使用有状态的StreamingGlobalLimitExec。
+   *完整模式下限制的流使用无状态CollectLimitExec运算符。
+   *更新模式下的流不支持限制。
    */
   case class StreamingGlobalLimitStrategy(outputMode: OutputMode) extends Strategy {
     override def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
+     //如果是ReturnAnswer则直接限制，或者遵循SpecialLimits策略的限制
       case ReturnAnswer(rootPlan) => rootPlan match {
         case Limit(IntegerLiteral(limit), child)
             if plan.isStreaming && outputMode == InternalOutputModes.Append =>
@@ -487,12 +489,13 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
   object StreamingJoinStrategy extends Strategy {
     override def apply(plan: LogicalPlan): Seq[SparkPlan] = {
       plan match {
+        //如果是唯一KEY
         case ExtractEquiJoinKeys(joinType, leftKeys, rightKeys, condition, left, right, _)
           if left.isStreaming && right.isStreaming =>
 
           new StreamingSymmetricHashJoinExec(
             leftKeys, rightKeys, joinType, condition, planLater(left), planLater(right)) :: Nil
-
+   
         case Join(left, right, _, _, _) if left.isStreaming && right.isStreaming =>
           throw new AnalysisException(
             "Stream-stream join without equality predicate is not supported", plan = Some(plan))
@@ -503,10 +506,11 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
   }
 
   /**
-   * Used to plan the aggregate operator for expressions based on the AggregateFunction2 interface.
+   * 用于根据AggregateFunction2接口规划表达式的聚合运算符。
    */
   object Aggregation extends Strategy {
     def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
+     
       case PhysicalAggregation(groupingExpressions, aggExpressions, resultExpressions, child)
         if aggExpressions.forall(expr => expr.isInstanceOf[AggregateExpression]) =>
         val aggregateExpressions = aggExpressions.map(expr =>
@@ -515,14 +519,14 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
         val (functionsWithDistinct, functionsWithoutDistinct) =
           aggregateExpressions.partition(_.isDistinct)
         if (functionsWithDistinct.map(_.aggregateFunction.children.toSet).distinct.length > 1) {
-          // This is a sanity check. We should not reach here when we have multiple distinct
-          // column sets. Our `RewriteDistinctAggregates` should take care this case.
+          //这是一个健全性检查。当我们有多个不同的时候，我们不应该到达这里
+          //列集 我们的`RewriteDistinctAggregates`应该注意这个案例。
           sys.error("You hit a query analyzer bug. Please report your query to " +
               "Spark user mailing list.")
         }
 
-        // Ideally this should be done in `NormalizeFloatingNumbers`, but we do it here because
-        // `groupingExpressions` is not extracted during logical phase.
+         //理想情况下，这应该在`NormalizeFloatingNumbers`中完成，但我们在这里做，因为
+         //在逻辑阶段不提取``groupingExpressions`。
         val normalizedGroupingExpressions = groupingExpressions.map { e =>
           NormalizeFloatingNumbers.normalize(e) match {
             case n: NamedExpression => n
