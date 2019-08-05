@@ -602,10 +602,10 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
   }
 
   /**
-   * This strategy is just for explaining `Dataset/DataFrame` created by `spark.readStream`.
-   * It won't affect the execution, because `StreamingRelation` will be replaced with
-   * `StreamingExecutionRelation` in `StreamingQueryManager` and `StreamingExecutionRelation` will
-   * be replaced with the real relation using the `Source` in `StreamExecution`.
+   *此策略仅用于解释`spark.readStream`创建的`Dataset / DataFrame`。
+   *它不会影响执行，因为`StreamingRelation`将替换为
+   *`StreamingQueryManager`和`StreamingExecutionRelation`中的`StreamingExecutionRelation`将会出现
+   *使用`StreamExecution`中的`Source`替换为真实关系。
    */
   object StreamingRelationStrategy extends Strategy {
     def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
@@ -620,8 +620,8 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
   }
 
   /**
-   * Strategy to convert [[FlatMapGroupsWithState]] logical operator to physical operator
-   * in streaming plans. Conversion for batch plans is handled by [[BasicOperators]].
+   *将[[ FlatMapGroupsWithState ]]逻辑运算符转换为物理运算符的策略
+   *在流媒体计划中。批量计划的转换由[[ BasicOperators ]]处理。
    */
   object FlatMapGroupsWithStateStrategy extends Strategy {
     override def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
@@ -639,7 +639,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
   }
 
   /**
-   * Strategy to convert EvalPython logical operator to physical operator.
+   * 将EvalPython逻辑运算符转换为物理运算符的策略。
    */
   object PythonEvals extends Strategy {
     override def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
