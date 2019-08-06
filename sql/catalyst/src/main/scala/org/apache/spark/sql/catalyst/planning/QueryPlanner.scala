@@ -39,13 +39,13 @@ abstract class GenericStrategy[PhysicalPlan <: TreeNode[PhysicalPlan]] extends L
 }
 
 /**
- * Abstract class for transforming [[LogicalPlan]]s into physical plans.
- * Child classes are responsible for specifying a list of [[GenericStrategy]] objects that
- * each of which can return a list of possible physical plan options.
- * If a given strategy is unable to plan all of the remaining operators in the tree,
- * it can call [[GenericStrategy#planLater planLater]], which returns a placeholder
- * object that will be [[collectPlaceholders collected]] and filled in
- * using other available strategies.
+ *用于将[[LogicalPlan]]转换为物理计划的抽象类。
+ *子类负责指定[[GenericStrategy]]对象的列表
+ *每个都可以返回可能的物理计划选项列表。
+ *如果给定策略无法规划树中的所有剩余运算符，
+ *它可以调用[[GenericStrategy＃planLater planLater]]，它返回一个占位符
+ *将[[collectPlaceholders collect]]并填写的对象
+ *使用其他可用策略。
  *
  * TODO: RIGHT NOW ONLY ONE PLAN IS RETURNED EVER...
  *       PLAN SPACE EXPLORATION WILL BE IMPLEMENTED LATER.
@@ -53,13 +53,13 @@ abstract class GenericStrategy[PhysicalPlan <: TreeNode[PhysicalPlan]] extends L
  * @tparam PhysicalPlan The type of physical plan produced by this [[QueryPlanner]]
  */
 abstract class QueryPlanner[PhysicalPlan <: TreeNode[PhysicalPlan]] {
-  /** A list of execution strategies that can be used by the planner */
+  /** 可被planner执行策略*/
   def strategies: Seq[GenericStrategy[PhysicalPlan]]
 
   def plan(plan: LogicalPlan): Iterator[PhysicalPlan] = {
     // Obviously a lot to do here still...
 
-    // Collect physical plan candidates.
+    // 收集物理计划集合，把iterator扁平化
     val candidates = strategies.iterator.flatMap(_(plan))
 
     // The candidates may contain placeholders marked as [[planLater]],
