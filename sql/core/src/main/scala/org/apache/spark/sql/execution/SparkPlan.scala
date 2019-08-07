@@ -48,32 +48,31 @@ object SparkPlan {
 }
 
 /**
- * The base class for physical operators.
+ * physical operators的基类
  *
- * The naming convention is that physical operators end with "Exec" suffix, e.g. [[ProjectExec]].
+ * 命名约定是物理运算符以“Exec”后缀结尾，例如[[ ProjectExec ]]。
  */
 abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializable {
 
   /**
-   * A handle to the SQL Context that was used to create this plan. Since many operators need
-   * access to the sqlContext for RDD operations or configuration this field is automatically
-   * populated by the query planning infrastructure.
+   * sqlContext用来创建此计划上下文预置环境变量的。
+   * 很多操作是需要访问sqlContext来进行RDD操作的
    */
   @transient final val sqlContext = SparkSession.getActiveSession.map(_.sqlContext).orNull
 
   protected def sparkContext = sqlContext.sparkContext
 
-  // sqlContext will be null when SparkPlan nodes are created without the active sessions.
+  // /在没有活动会话的情况下创建SparkPlan节点时，sqlContext将为null。
   val subexpressionEliminationEnabled: Boolean = if (sqlContext != null) {
     sqlContext.conf.subexpressionEliminationEnabled
   } else {
     false
   }
 
-  // whether we should fallback when hitting compilation errors caused by codegen
+  // 在遇到由codegen引起的编译错误时是否应该回退
   private val codeGenFallBack = (sqlContext == null) || sqlContext.conf.codegenFallback
 
-  /** Overridden make copy also propagates sqlContext to copied plan. */
+  // 重写的make copy也会将sqlContext传播到复制的计划。
   override def makeCopy(newArgs: Array[AnyRef]): SparkPlan = {
     if (sqlContext != null) {
       SparkSession.setActiveSession(sqlContext.sparkSession)
@@ -82,14 +81,14 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
   }
 
   /**
-   * @return The logical plan this plan is linked to.
+   * 返回此计划所链接的逻辑计划。
    */
   def logicalLink: Option[LogicalPlan] =
     getTagValue(SparkPlan.LOGICAL_PLAN_TAG)
       .orElse(getTagValue(SparkPlan.LOGICAL_PLAN_INHERITED_TAG))
 
   /**
-   * Set logical plan link recursively if unset.
+   * 如果未设置，则递归设置逻辑计划链接。
    */
   def setLogicalLink(logicalPlan: LogicalPlan): Unit = {
     setLogicalLink(logicalPlan, false)
@@ -111,24 +110,24 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
   }
 
   /**
-   * @return All metrics containing metrics of this SparkPlan.
+   * 返回包含此SparkPlan指标的所有指标。
    */
   def metrics: Map[String, SQLMetric] = Map.empty
 
   /**
-   * Resets all the metrics.
+   * 重置所有指标。
    */
   def resetMetrics(): Unit = {
     metrics.valuesIterator.foreach(_.reset())
   }
 
   /**
-   * @return [[SQLMetric]] for the `name`.
+   * 返回[[ SQLMetric ]]代表`name`。
    */
   def longMetric(name: String): SQLMetric = metrics(name)
 
-  // TODO: Move to `DistributedPlan`
-  /** Specifies how data is partitioned across different nodes in the cluster. */
+   // TODO：转到`DistributedPlan`
+   /**指定如何跨群集中的不同节点对数据进行分区。*/
   def outputPartitioning: Partitioning = UnknownPartitioning(0) // TODO: WRONG WIDTH!
 
   /**
@@ -446,7 +445,7 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
 
   protected def newOrdering(
       order: Seq[SortOrder], inputSchema: Seq[Attribute]): Ordering[InternalRow] = {
-    GenerateOrdering.generate(order, inputSchema)
+    GenerateOrdering.generate(order, inputSchema)fg
   }
 
   /**
