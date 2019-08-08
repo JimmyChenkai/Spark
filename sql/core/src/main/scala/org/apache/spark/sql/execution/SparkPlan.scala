@@ -148,17 +148,16 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
   def requiredChildDistribution: Seq[Distribution] =
     Seq.fill(children.size)(UnspecifiedDistribution)
 
-  /** Specifies how data is ordered in each partition. */
+  /**指定每个分区中数据的排序方式。*/
   def outputOrdering: Seq[SortOrder] = Nil
 
-  /** Specifies sort order for each partition requirements on the input data for this operator. */
+  /**指定此运算符的输入数据上每个分区要求的排序顺序*/
   def requiredChildOrdering: Seq[Seq[SortOrder]] = Seq.fill(children.size)(Nil)
 
   /**
-   * Returns the result of this query as an RDD[InternalRow] by delegating to `doExecute` after
-   * preparations.
+   * 通过委托给`doExecute`后，将此查询的结果作为RDD [InternalRow]返回
    *
-   * Concrete implementations of SparkPlan should override `doExecute`.
+   * SparkPlan的具体实现应该覆盖`doExecute`。
    */
   final def execute(): RDD[InternalRow] = executeQuery {
     if (isCanonicalizedPlan) {
@@ -168,10 +167,9 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
   }
 
   /**
-   * Returns the result of this query as a broadcast variable by delegating to `doExecuteBroadcast`
-   * after preparations.
+   * 准备好之后通过委托给`doExecuteBroadcast`将此查询的结果作为广播变量返回
    *
-   * Concrete implementations of SparkPlan should override `doExecuteBroadcast`.
+   * SparkPlan的具体实现应该覆盖`doExecuteBroadcast`。
    */
   final def executeBroadcast[T](): broadcast.Broadcast[T] = executeQuery {
     if (isCanonicalizedPlan) {
@@ -181,8 +179,8 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
   }
 
   /**
-   * Executes a query after preparing the query and adding query plan information to created RDDs
-   * for visualization.
+   * 在准备查询并向创建的RDD添加查询计划信息后执行查询
+   * 用于可视化
    */
   protected final def executeQuery[T](query: => T): T = {
     RDDOperationScope.withScope(sparkContext, nodeName, false, true) {
@@ -193,14 +191,14 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
   }
 
   /**
-   * List of (uncorrelated scalar subquery, future holding the subquery result) for this plan node.
-   * This list is populated by [[prepareSubqueries]], which is called in [[prepare]].
+   * 此计划节点的（不相关的标量子查询，将来保存子查询结果）的列表。
+   * 此列表由[[ prepareSubqueries ]] 填充，在[[ prepare ]]中调用。
    */
   @transient
   private val runningSubqueries = new ArrayBuffer[ExecSubqueryExpression]
 
   /**
-   * Finds scalar subquery expressions in this plan node and starts evaluating them.
+   * 在此计划节点中查找标量子查询表达式并开始评估它们。
    */
   protected def prepareSubqueries(): Unit = {
     expressions.foreach {
@@ -213,7 +211,7 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
   }
 
   /**
-   * Blocks the thread until all subqueries finish evaluation and update the results.
+   * 阻塞线程，直到所有子查询完成评估并更新结果。
    */
   protected def waitForSubqueries(): Unit = synchronized {
     // fill in the result of subqueries
@@ -224,15 +222,15 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
   }
 
   /**
-   * Whether the "prepare" method is called.
+   * 是否调用“prepare”方法。
    */
   private var prepared = false
 
   /**
-   * Prepares this SparkPlan for execution. It's idempotent.
+   *准备此SparkPlan以执行。它是幂等的。
    */
   final def prepare(): Unit = {
-    // doPrepare() may depend on it's children, we should call prepare() on all the children first.
+    // doPrepare（）可能依赖于它的孩子，我们应该首先对所有孩子调用prepare（）。
     children.foreach(_.prepare())
     synchronized {
       if (!prepared) {
@@ -272,12 +270,12 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
   }
 
   /**
-   * Packing the UnsafeRows into byte array for faster serialization.
-   * The byte arrays are in the following format:
-   * [size] [bytes of UnsafeRow] [size] [bytes of UnsafeRow] ... [-1]
+   *将UnsafeRows打包成字节数组，以便更快地进行序列化。
+   *字节数组采用以下格式：
+   * [size] [UnsafeRow的字节] [size] [UnsafeRow的字节] ... [-1]
    *
-   * UnsafeRow is highly compressible (at least 8 bytes for any column), the byte array is also
-   * compressed.
+   * UnsafeRow是高度可压缩的（任何列至少8个字节），字节数组也是
+   * 压缩。
    */
   private def getByteArrayRdd(n: Int = -1): RDD[(Long, Array[Byte])] = {
     execute().mapPartitionsInternal { iter =>
@@ -286,7 +284,7 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
       val codec = CompressionCodec.createCodec(SparkEnv.get.conf)
       val bos = new ByteArrayOutputStream()
       val out = new DataOutputStream(codec.compressedOutputStream(bos))
-      // `iter.hasNext` may produce one row and buffer it, we should only call it when the limit is
+      // `iter.hasNext`可以生成一行并缓冲它，我们只应在限制时调用它
       // not hit.
       while ((n < 0 || count < n) && iter.hasNext) {
         val row = iter.next().asInstanceOf[UnsafeRow]
@@ -302,7 +300,7 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
   }
 
   /**
-   * Decodes the byte arrays back to UnsafeRows and put them into buffer.
+   * 将字节数组解码回UnsafeRows并将它们放入缓冲区。
    */
   private def decodeUnsafeRows(bytes: Array[Byte]): Iterator[InternalRow] = {
     val nFields = schema.length
@@ -326,7 +324,7 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
   }
 
   /**
-   * Runs this query returning the result as an array.
+   * 运行此查询将结果作为数组返回。
    */
   def executeCollect(): Array[InternalRow] = {
     val byteArrayRdd = getByteArrayRdd()
