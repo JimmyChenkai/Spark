@@ -361,11 +361,12 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
   }
 
   /**
-   * Runs this query returning the first `n` rows as an array.
+   * 运行此查询，将第一行“n”行作为数组返回
    *
-   * This is modeled after `RDD.take` but never runs any job locally on the driver.
+   * 这是在`RDD.take`之后建模的，但从不在驱动程序上本地运行任何作业。
    */
   def executeTake(n: Int): Array[InternalRow] = {
+    //如果n==0 则新建一个InternalRow类型的Array
     if (n == 0) {
       return new Array[InternalRow](0)
     }
@@ -376,19 +377,17 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
     val totalParts = childRDD.partitions.length
     var partsScanned = 0
     while (buf.size < n && partsScanned < totalParts) {
-      // The number of partitions to try in this iteration. It is ok for this number to be
-      // greater than totalParts because we actually cap it at totalParts in runJob.
+      //在此迭代中尝试的分区数。这个号码可以大于totalParts，因为我们实际上将它限制在runJob中的totalParts。
       var numPartsToTry = 1L
       if (partsScanned > 0) {
-        // If we didn't find any rows after the previous iteration, quadruple and retry.
-        // Otherwise, interpolate the number of partitions we need to try, but overestimate
-        // it by 50%. We also cap the estimation in the end.
+        //如果我们在上一次迭代后没有找到任何行，则重复四次并重试。
+        //否则，插入我们需要尝试的分区数，但要高估50％我们最终也将估算上限。
         val limitScaleUpFactor = Math.max(sqlContext.conf.limitScaleUpFactor, 2)
         if (buf.isEmpty) {
           numPartsToTry = partsScanned * limitScaleUpFactor
         } else {
           val left = n - buf.size
-          // As left > 0, numPartsToTry is always >= 1
+          // 例如 left > 0, numPartsToTry>=1是始终这样的
           numPartsToTry = Math.ceil(1.5 * left * partsScanned / buf.size).toInt
           numPartsToTry = Math.min(numPartsToTry, partsScanned * limitScaleUpFactor)
         }
