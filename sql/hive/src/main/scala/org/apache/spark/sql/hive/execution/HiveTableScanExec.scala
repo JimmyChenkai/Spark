@@ -43,11 +43,11 @@ import org.apache.spark.sql.types.{BooleanType, DataType}
 import org.apache.spark.util.Utils
 
 /**
- * The Hive table scan operator.  Column and partition pruning are both handled.
+ * Hive表扫描操作符。处理列和分区修剪。
  *
- * @param requestedAttributes Attributes to be fetched from the Hive table.
- * @param relation The Hive table be scanned.
- * @param partitionPruningPred An optional partition pruning predicate for partitioned table.
+ * @param requestedAttributes 要从Hive表中获取的属性。
+ * @param relation 要扫描Hive表。
+ * @param partitionPruningPred 分区表的可选分区修剪谓词。
  */
 private[hive]
 case class HiveTableScanExec(
@@ -57,28 +57,28 @@ case class HiveTableScanExec(
     @transient private val sparkSession: SparkSession)
   extends LeafExecNode with CastSupport {
 
+  //要求分区修剪谓词仅支持分区表。    
   require(partitionPruningPred.isEmpty || relation.isPartitioned,
     "Partition pruning predicates only supported for partitioned tables.")
-
+  //SQLConf配置
   override def conf: SQLConf = sparkSession.sessionState.conf
-
+  //节点名称
   override def nodeName: String = s"Scan hive ${relation.tableMeta.qualifiedName}"
-
+  //重写了Metrics
   override lazy val metrics = Map(
     "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"))
-
+  //生成个hive属性方法
   override def producedAttributes: AttributeSet = outputSet ++
     AttributeSet(partitionPruningPred.flatMap(_.references))
-
+  //原始的属性
   private val originalAttributes = AttributeMap(relation.output.map(a => a -> a))
-
+  //输出原始属性
   override val output: Seq[Attribute] = {
-    // Retrieve the original attributes based on expression ID so that capitalization matches.
+    // 根据表达式ID检索原始属性，以便大写匹配。
     requestedAttributes.map(originalAttributes)
   }
 
-  // Bind all partition key attribute references in the partition pruning predicate for later
-  // evaluation.
+  // 绑定分区修剪谓词中的所有分区键属性引用以供稍后使用
   private lazy val boundPruningPred = partitionPruningPred.reduceLeftOption(And).map { pred =>
     require(pred.dataType == BooleanType,
       s"Data type of predicate $pred must be ${BooleanType.catalogString} rather than " +
@@ -93,28 +93,28 @@ case class HiveTableScanExec(
     hiveQlTable.getOutputFormatClass,
     hiveQlTable.getMetadata)
 
-  // Create a local copy of hadoopConf,so that scan specific modifications should not impact
-  // other queries
+  // 创建hadoopConf的本地副本，以便扫描特定的修改不会影响其他查询
   @transient private lazy val hadoopConf = {
     val c = sparkSession.sessionState.newHadoopConf()
-    // append columns ids and names before broadcast
+    //在广播之前附加列ID和名称
     addColumnMetadataToConf(c)
     c
   }
 
+  //读取hadoop方法
   @transient private lazy val hadoopReader = new HadoopTableReader(
     output,
     relation.partitionCols,
     tableDesc,
     sparkSession,
     hadoopConf)
-
+  // 类型转换
   private def castFromString(value: String, dataType: DataType) = {
     cast(Literal(value), dataType).eval(null)
   }
-
+  //元数据里面增加所需的列
   private def addColumnMetadataToConf(hiveConf: Configuration): Unit = {
-    // Specifies needed column IDs for those non-partitioning columns.
+    // 为这些非分区列指定所需的列ID。
     val columnOrdinals = AttributeMap(relation.dataCols.zipWithIndex)
     val neededColumnIDs = output.flatMap(columnOrdinals.get).map(o => o: Integer)
 
@@ -123,13 +123,13 @@ case class HiveTableScanExec(
     val deserializer = tableDesc.getDeserializerClass.getConstructor().newInstance()
     deserializer.initialize(hiveConf, tableDesc.getProperties)
 
-    // Specifies types and object inspectors of columns to be scanned.
+    // 指定要扫描的列的类型和对象检查器。
     val structOI = ObjectInspectorUtils
       .getStandardObjectInspector(
         deserializer.getObjectInspector,
         ObjectInspectorCopyOption.JAVA)
       .asInstanceOf[StructObjectInspector]
-
+    //列的类型
     val columnTypeNames = structOI
       .getAllStructFieldRefs.asScala
       .map(_.getFieldObjectInspector)
@@ -141,10 +141,10 @@ case class HiveTableScanExec(
   }
 
   /**
-   * Prunes partitions not involve the query plan.
+   * Prunes分区不涉及查询计划。
    *
-   * @param partitions All partitions of the relation.
-   * @return Partitions that are involved in the query plan.
+   * @param partitions分区关系的所有分区。
+   * @return Partitions 查询计划中涉及的分区。
    */
   private[hive] def prunePartitions(partitions: Seq[HivePartition]) = {
     boundPruningPred match {
@@ -153,21 +153,20 @@ case class HiveTableScanExec(
         val dataTypes = relation.partitionCols.map(_.dataType)
         val castedValues = part.getValues.asScala.zip(dataTypes)
           .map { case (value, dataType) => castFromString(value, dataType) }
-
-        // Only partitioned values are needed here, since the predicate has already been bound to
-        // partition key attribute references.
+        //这里只需要分区值，因为谓词已被绑定
+        //分区键属性引用。
         val row = InternalRow.fromSeq(castedValues)
         shouldKeep.eval(row).asInstanceOf[Boolean]
       }
     }
   }
 
-  // exposed for tests
+  // 暴露用于测试
   @transient lazy val rawPartitions = {
     val prunedPartitions =
       if (sparkSession.sessionState.conf.metastorePartitionPruning &&
           partitionPruningPred.size > 0) {
-        // Retrieve the original attributes based on expression ID so that capitalization matches.
+        //根据表达式ID检索原始属性，以便大写匹配。
         val normalizedFilters = partitionPruningPred.map(_.transform {
           case a: AttributeReference => originalAttributes(a)
         })
@@ -181,8 +180,8 @@ case class HiveTableScanExec(
   }
 
   protected override def doExecute(): RDD[InternalRow] = {
-    // Using dummyCallSite, as getCallSite can turn out to be expensive with
-    // multiple partitions.
+    //使用dummyCallSite，因为getCallSite可能会变得昂贵
+    //多个分区
     val rdd = if (!relation.isPartitioned) {
       Utils.withDummyCallSite(sqlContext.sparkContext) {
         hadoopReader.makeRDDForTable(hiveQlTable)
@@ -193,7 +192,7 @@ case class HiveTableScanExec(
       }
     }
     val numOutputRows = longMetric("numOutputRows")
-    // Avoid to serialize MetastoreRelation because schema is lazy. (see SPARK-15649)
+    //避免序列化MetastoreRelation，因为架构是懒惰的。（见SPARK-15649）
     val outputSchema = schema
     rdd.mapPartitionsWithIndexInternal { (index, iter) =>
       val proj = UnsafeProjection.create(outputSchema)
