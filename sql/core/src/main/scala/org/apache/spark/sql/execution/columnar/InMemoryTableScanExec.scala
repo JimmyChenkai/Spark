@@ -29,13 +29,17 @@ import org.apache.spark.sql.execution.vectorized._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
-
+//继承实现了LeafExecNode和ColumnarBatchScan
+//参数一 是属性
+//参数二 是谓词
+//参数三 是内存表之间关系
 case class InMemoryTableScanExec(
     attributes: Seq[Attribute],
     predicates: Seq[Expression],
     @transient relation: InMemoryRelation)
   extends LeafExecNode with ColumnarBatchScan {
 
+  //覆盖 了节点名称    
   override val nodeName: String = {
     relation.cacheBuilder.tableName match {
       case Some(_) =>
@@ -45,8 +49,11 @@ case class InMemoryTableScanExec(
     }
   }
 
+  //内部子节点    
   override protected def innerChildren: Seq[QueryPlan[_]] = Seq(relation) ++ super.innerChildren
 
+  //覆盖重写了doCanonicalize方法
+  //拷贝属性，谓词，关系  
   override def doCanonicalize(): SparkPlan =
     copy(attributes = attributes.map(QueryPlan.normalizeExprId(_, relation.output)),
       predicates = predicates.map(QueryPlan.normalizeExprId(_, relation.output)),
@@ -62,12 +69,12 @@ case class InMemoryTableScanExec(
     ))
 
   /**
-   * If true, get data from ColumnVector in ColumnarBatch, which are generally faster.
-   * If false, get data from UnsafeRow build from CachedBatch
+   *如果为true，则从ColumnarBatch中的ColumnVector获取数据，这通常更快。
+   *如果为false，则从CachedBatch从UnsafeRow构建获取数据
    */
   override val supportsBatch: Boolean = {
-    // In the initial implementation, for ease of review
-    // support only primitive data types and # of fields is less than wholeStageMaxNumFields
+    //在初始实施中，为了便于审查
+    //仅支持原始数据类型，字段数小于wholeStageMaxNumFields
     conf.cacheVectorizedReaderEnabled && relation.schema.fields.forall(f => f.dataType match {
       case BooleanType | ByteType | ShortType | IntegerType | LongType |
            FloatType | DoubleType => true
@@ -75,21 +82,35 @@ case class InMemoryTableScanExec(
     }) && !WholeStageCodegenExec.isTooManyFields(conf, relation.schema)
   }
 
-  // TODO: revisit this. Shall we always turn off whole stage codegen if the output data are rows?
+  // TODO:重温这个。如果输出数据是行，我们总是关闭整个阶段的codegen吗？
   override def supportCodegen: Boolean = supportsBatch
-
+  
+  //列
   private val columnIndices =
     attributes.map(a => relation.output.map(o => o.exprId).indexOf(a.exprId)).toArray
-
+  
+  //关系之间结构
   private val relationSchema = relation.schema.toArray
 
+  //批处理列结构    
   private lazy val columnarBatchSchema = new StructType(columnIndices.map(i => relationSchema(i)))
 
+  /**
+    * 创建和解压缩列    
+    * param1 cachedColumnarBatch
+    * param2 offHeapColumnVectorEnabled
+    * return ColumnarBatch
+    **/
   private def createAndDecompressColumn(
       cachedColumnarBatch: CachedBatch,
       offHeapColumnVectorEnabled: Boolean): ColumnarBatch = {
+    
+    //cachedColumnarBatch行数
     val rowCount = cachedColumnarBatch.numRows
     val taskContext = Option(TaskContext.get())
+    //列集合，offHeapColumnVectorEnabled是false或者taskContext空
+    //则开始分配列在JVM堆中
+    //否则是分配列在JVM堆外  
     val columnVectors = if (!offHeapColumnVectorEnabled || taskContext.isEmpty) {
       OnHeapColumnVector.allocateColumns(rowCount, columnarBatchSchema)
     } else {
@@ -98,6 +119,7 @@ case class InMemoryTableScanExec(
     val columnarBatch = new ColumnarBatch(columnVectors.asInstanceOf[Array[ColumnVector]])
     columnarBatch.setNumRows(rowCount)
 
+    //列解压缩处理  
     for (i <- attributes.indices) {
       ColumnAccessor.decompress(
         cachedColumnarBatch.buffers(columnIndices(i)),
@@ -112,8 +134,8 @@ case class InMemoryTableScanExec(
     val buffers = filteredCachedBatches()
     val offHeapColumnVectorEnabled = conf.offHeapColumnVectorEnabled
     if (supportsBatch) {
-      // HACK ALERT: This is actually an RDD[ColumnarBatch].
-      // We're taking advantage of Scala's type erasure here to pass these batches along.
+      // HACK ALERT：这实际上是一个RDD [ColumnarBatch]。
+      //我们在这里利用Scala的类型擦除来传递这些批次。
       buffers
         .map(createAndDecompressColumn(_, offHeapColumnVectorEnabled))
         .asInstanceOf[RDD[InternalRow]]
@@ -125,18 +147,18 @@ case class InMemoryTableScanExec(
         readBatches.setValue(0)
       }
 
-      // Using these variables here to avoid serialization of entire objects (if referenced
-      // directly) within the map Partitions closure.
+      //在这里使用这些变量来避免整个对象的序列化（如果引用的话）
+      //直接）在地图分区封闭中。
       val relOutput: AttributeSeq = relation.output
 
       filteredCachedBatches().mapPartitionsInternal { cachedBatchIterator =>
-        // Find the ordinals and data types of the requested columns.
+       //查找所请求列的序数和数据类型。
         val (requestedColumnIndices, requestedColumnDataTypes) =
           attributes.map { a =>
             relOutput.indexOf(a.exprId) -> a.dataType
           }.unzip
 
-        // update SQL metrics
+        //更新SQL指标
         val withMetrics = cachedBatchIterator.map { batch =>
           if (enableAccumulatorsForTest) {
             readBatches.add(1)
@@ -164,16 +186,16 @@ case class InMemoryTableScanExec(
   override def output: Seq[Attribute] = attributes
 
   private def updateAttribute(expr: Expression): Expression = {
-    // attributes can be pruned so using relation's output.
-    // E.g., relation.output is [id, item] but this scan's output can be [item] only.
+    //可以使用关系的输出修剪属性。
+    //例如，relation.output是[id，item]但是此扫描的输出只能是[item]。
     val attrMap = AttributeMap(relation.cachedPlan.output.zip(relation.output))
     expr.transform {
       case attr: Attribute => attrMap.getOrElse(attr, attr)
     }
   }
 
-  // The cached version does not change the outputPartitioning of the original SparkPlan.
-  // But the cached version could alias output, so we need to replace output.
+  //缓存版本不会更改原始SparkPlan的outputPartitioning。
+  //但是缓存版本可以为输出设置别名，因此我们需要替换输出。
   override def outputPartitioning: Partitioning = {
     relation.cachedPlan.outputPartitioning match {
       case e: Expression => updateAttribute(e).asInstanceOf[Partitioning]
@@ -181,16 +203,16 @@ case class InMemoryTableScanExec(
     }
   }
 
-  // The cached version does not change the outputOrdering of the original SparkPlan.
-  // But the cached version could alias output, so we need to replace output.
+  //缓存版本不会更改原始SparkPlan的outputOrdering。
+  //但是缓存版本可以为输出设置别名，因此我们需要替换输出。
   override def outputOrdering: Seq[SortOrder] =
     relation.cachedPlan.outputOrdering.map(updateAttribute(_).asInstanceOf[SortOrder])
 
-  // Keeps relation's partition statistics because we don't serialize relation.
+  //保留关系的分区统计信息，因为我们不会序列化关系。
   private val stats = relation.partitionStatistics
   private def statsFor(a: Attribute) = stats.forAttribute(a)
 
-  // Currently, only use statistics from atomic types except binary type only.
+  //目前，仅使用原子类型的统计信息，仅限二进制类型。
   private object ExtractableLiteral {
     def unapply(expr: Expression): Option[Literal] = expr match {
       case lit: Literal => lit.dataType match {
@@ -202,10 +224,11 @@ case class InMemoryTableScanExec(
     }
   }
 
-  // Returned filter predicate should return false iff it is impossible for the input expression
-  // to evaluate to `true` based on statistics collected about this partition batch.
+  //如果输入表达式不可能，则返回的过滤谓词应该返回false
+  //根据收集的有关此分区批次的统计信息评估为“true”。
   @transient lazy val buildFilter: PartialFunction[Expression, Expression] = {
     case And(lhs: Expression, rhs: Expression)
+      //若buildFilter在左右节点都定义了则合并
       if buildFilter.isDefinedAt(lhs) || buildFilter.isDefinedAt(rhs) =>
       (buildFilter.lift(lhs) ++ buildFilter.lift(rhs)).reduce(_ && _)
 
@@ -276,6 +299,7 @@ case class InMemoryTableScanExec(
         l <= statsFor(a).upperBound.substr(0, Length(l))
   }
 
+  //懒加载机制中分区过滤    
   lazy val partitionFilters: Seq[Expression] = {
     predicates.flatMap { p =>
       val filter = buildFilter.lift(p)
@@ -289,7 +313,7 @@ case class InMemoryTableScanExec(
       boundFilter.foreach(_ =>
         filter.foreach(f => logInfo(s"Predicate $p generates partition filter: $f")))
 
-      // If the filter can't be resolved then we are missing required statistics.
+      //如果无法解析过滤器，那么我们缺少必需的统计信息。
       boundFilter.filter(_.resolved)
     }
   }
@@ -297,15 +321,15 @@ case class InMemoryTableScanExec(
   lazy val enableAccumulatorsForTest: Boolean =
     sqlContext.getConf("spark.sql.inMemoryTableScanStatistics.enable", "false").toBoolean
 
-  // Accumulators used for testing purposes
+  //用于测试目的的累加器
   lazy val readPartitions = sparkContext.longAccumulator
   lazy val readBatches = sparkContext.longAccumulator
 
   private val inMemoryPartitionPruningEnabled = sqlContext.conf.inMemoryPartitionPruning
 
   private def filteredCachedBatches(): RDD[CachedBatch] = {
-    // Using these variables here to avoid serialization of entire objects (if referenced directly)
-    // within the map Partitions closure.
+    //在这里使用这些变量来避免整个对象的序列化（如果直接引用）
+    //在地图内部分区封闭。
     val schema = stats.schema
     val schemaIndex = schema.zipWithIndex
     val buffers = relation.cacheBuilder.cachedColumnBuffers
@@ -316,7 +340,7 @@ case class InMemoryTableScanExec(
         schema)
       partitionFilter.initialize(index)
 
-      // Do partition batch pruning if enabled
+      //如果启用了分区批量修剪
       if (inMemoryPartitionPruningEnabled) {
         cachedBatchIterator.filter { cachedBatch =>
           if (!partitionFilter.eval(cachedBatch.stats)) {
@@ -338,6 +362,7 @@ case class InMemoryTableScanExec(
     }
   }
 
+  //执行入口出    
   protected override def doExecute(): RDD[InternalRow] = {
     if (supportsBatch) {
       WholeStageCodegenExec(this)(codegenStageId = 0).execute()
