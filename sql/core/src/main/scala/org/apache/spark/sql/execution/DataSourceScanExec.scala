@@ -50,7 +50,7 @@ trait DataSourceScanExec extends LeafExecNode with CodegenSupport {
     s"Scan $relation ${tableIdentifier.map(_.unquotedString).getOrElse("")}"
   }
 
-  // Metadata that describes more details of this scan.
+  // 描述此扫描的更多详细信息的元数据。
   protected def metadata: Map[String, String]
 
   override def simpleString(maxFields: Int): String = {
@@ -64,14 +64,17 @@ trait DataSourceScanExec extends LeafExecNode with CodegenSupport {
   }
 
   /**
-   * Shorthand for calling redactString() without specifying redacting rules
+   *在不指定编辑规则的情况下调用redactString（）的简写
    */
   private def redact(text: String): String = {
     Utils.redact(sqlContext.sessionState.conf.stringRedactionPattern, text)
   }
 }
 
-/** Physical plan node for scanning data from a relation. */
+
+/**
+ * 物理计划节点，用于扫描关系中的数据。
+ */
 case class RowDataSourceScanExec(
     fullOutput: Seq[Attribute],
     requiredColumnsIndex: Seq[Int],
@@ -84,12 +87,13 @@ case class RowDataSourceScanExec(
 
   def output: Seq[Attribute] = requiredColumnsIndex.map(fullOutput)
 
+  //懒加载机制的 指标  
   override lazy val metrics =
     Map("numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"))
-
+  //执行开始入口
   protected override def doExecute(): RDD[InternalRow] = {
     val numOutputRows = longMetric("numOutputRows")
-
+    //map函数中的重新分区 
     rdd.mapPartitionsWithIndexInternal { (index, iter) =>
       val proj = UnsafeProjection.create(schema)
       proj.initialize(index)
@@ -100,11 +104,11 @@ case class RowDataSourceScanExec(
     }
   }
 
-  // Input can be InternalRow, has to be turned into UnsafeRows.
+  //输入可以是InternalRow，必须转换为UnsafeRows。
   override protected val createUnsafeProjection: Boolean = true
 
   override def inputRDD: RDD[InternalRow] = rdd
-
+  //元数据信息
   override val metadata: Map[String, String] = {
     val markedFilters = for (filter <- filters) yield {
       if (handledFilters.contains(filter)) s"*$filter" else s"$filter"
@@ -114,7 +118,7 @@ case class RowDataSourceScanExec(
       "PushedFilters" -> markedFilters.mkString("[", ", ", "]"))
   }
 
-  // Don't care about `rdd` and `tableIdentifier` when canonicalizing.
+  //在规范化时，不要关心`rdd`和`tableIdentifier`。
   override def doCanonicalize(): SparkPlan =
     copy(
       fullOutput.map(QueryPlan.normalizeExprId(_, fullOutput)),
@@ -123,15 +127,15 @@ case class RowDataSourceScanExec(
 }
 
 /**
- * Physical plan node for scanning data from HadoopFsRelations.
+ * 用于从HadoopFsRelations扫描数据的物理计划节点。
  *
- * @param relation The file-based relation to scan.
- * @param output Output attributes of the scan, including data attributes and partition attributes.
- * @param requiredSchema Required schema of the underlying relation, excluding partition columns.
- * @param partitionFilters Predicates to use for partition pruning.
- * @param optionalBucketSet Bucket ids for bucket pruning
- * @param dataFilters Filters on non-partition columns.
- * @param tableIdentifier identifier for the table in the metastore.
+ * @param  relation基于文件的扫描关系。
+ * @param  输出扫描的输出属性，包括数据属性和分区属性。
+ * @param  requiredSchema底层关系的必需模式，不包括分区列。
+ * @param  partitionFilters用于分区修剪的谓词。
+ * @param  optionalBucketSet用于铲斗修剪的铲斗ID
+ * @param  dataFilters在非分区列上过滤。
+ * Metastore中表的@param  tableIdentifier标识符。
  */
 case class FileSourceScanExec(
     @transient relation: HadoopFsRelation,
@@ -143,8 +147,8 @@ case class FileSourceScanExec(
     override val tableIdentifier: Option[TableIdentifier])
   extends DataSourceScanExec with ColumnarBatchScan  {
 
-  // Note that some vals referring the file-based relation are lazy intentionally
-  // so that this plan can be canonicalized on executor side too. See SPARK-23731.
+  //请注意，一些引用基于文件的关系的val是故意的
+  //这样该计划也可以在执行者方面进行规范化。见SPARK-23731。
   override lazy val supportsBatch: Boolean = {
     relation.fileFormat.supportBatch(relation.sparkSession, schema)
   }
@@ -166,8 +170,8 @@ case class FileSourceScanExec(
   val driverMetrics: HashMap[String, Long] = HashMap.empty
 
   /**
-   * Send the driver-side metrics. Before calling this function, selectedPartitions has
-   * been initialized. See SPARK-26327 for more details.
+   *发送驱动程序端指标。在调用此函数之前，selectedPartitions有
+   *已初始化。有关详细信息，请参阅SPARK-26327。
    */
   private def sendDriverMetrics(): Unit = {
     driverMetrics.foreach(e => metrics(e._1).add(e._2))
@@ -188,8 +192,8 @@ case class FileSourceScanExec(
   }
 
   /**
-   * [[partitionFilters]] can contain subqueries whose results are available only at runtime so
-   * accessing [[selectedPartitions]] should be guarded by this method during planning
+   * [[ partitionFilters ]]可以包含子查询，其结果仅在运行时可用
+   * 在规划期间，应使用此方法保护访问[[ selectedPartitions ]]
    */
   private def hasPartitionsAvailableAtRunTime: Boolean = {
     partitionFilters.exists(ExecSubqueryExpression.hasSubquery)
@@ -232,11 +236,11 @@ case class FileSourceScanExec(
             spec.sortColumnNames.map(x => toAttribute(x)).takeWhile(x => x.isDefined).map(_.get)
 
           val sortOrder = if (sortColumns.nonEmpty && !hasPartitionsAvailableAtRunTime) {
-            // In case of bucketing, its possible to have multiple files belonging to the
-            // same bucket in a given relation. Each of these files are locally sorted
-            // but those files combined together are not globally sorted. Given that,
-            // the RDD partition will not be sorted even if the relation has sort columns set
-            // Current solution is to check if all the buckets have a single file in it
+            //在分组的情况下，可能有多个文件属于
+            //给定关系中的相同存储桶 每个文件都是本地排序的
+            //但是这些组合在一起的文件不是全局排序的。鉴于，
+            //即使关系已设置排序列，RDD分区也不会排序
+            //当前的解决方案是检查所有存储桶中是否包含单个文件
 
             val files = selectedPartitions.flatMap(partition => partition.files)
             val bucketToFilesGrouping =
@@ -244,8 +248,8 @@ case class FileSourceScanExec(
             val singleFilePartitions = bucketToFilesGrouping.forall(p => p._2.length <= 1)
 
             if (singleFilePartitions) {
-              // TODO Currently Spark does not support writing columns sorting in descending order
-              // so using Ascending order. This can be fixed in future
+              // TODO目前Spark不支持按降序编写列排序
+              //所以使用升序。这可以在将来修复
               sortColumns.map(attribute => SortOrder(attribute, Ascending))
             } else {
               Nil
@@ -333,11 +337,12 @@ case class FileSourceScanExec(
       "metadataTime" -> SQLMetrics.createTimingMetric(sparkContext, "metadata time"),
       "scanTime" -> SQLMetrics.createTimingMetric(sparkContext, "scan time"))
 
+  //入口出  
   protected override def doExecute(): RDD[InternalRow] = {
     if (supportsBatch) {
-      // in the case of fallback, this batched scan should never fail because of:
-      // 1) only primitive types are supported
-      // 2) the number of columns should be smaller than spark.sql.codegen.maxFields
+      //在回退的情况下，这个批量扫描应该永远不会失败，因为：
+      // 1）仅支持基本类型
+      // 2）列数应小于spark.sql.codegen.maxFields
       WholeStageCodegenExec(this)(codegenStageId = 0).execute()
     } else {
       val numOutputRows = longMetric("numOutputRows")
@@ -363,16 +368,16 @@ case class FileSourceScanExec(
   override val nodeNamePrefix: String = "File"
 
   /**
-   * Create an RDD for bucketed reads.
-   * The non-bucketed variant of this function is [[createNonBucketedReadRDD]].
+   *为分段读取创建RDD。
+   *此函数的非分块变体是[[ createNonBucketedReadRDD ]]。
    *
-   * The algorithm is pretty simple: each RDD partition being returned should include all the files
-   * with the same bucket id from all the given Hive partitions.
+   *算法非常简单：返回的每个RDD分区都应包含所有文件
+   *具有来自所有给定Hive分区的相同存储桶ID。
    *
-   * @param bucketSpec the bucketing spec.
-   * @param readFile a function to read each (part of a) file.
-   * @param selectedPartitions Hive-style partition that are part of the read.
-   * @param fsRelation [[HadoopFsRelation]] associated with the read.
+   * @param  bucketSpec的分组规格。
+   * @param  readFile读取每个（部分）文件的函数。
+   * @param  selectedPartitions Hive风格的分区是读取的一部分。
+   * @param  fsRelation [[ HadoopFsRelation ]]与读取相关联。
    */
   private def createBucketedReadRDD(
       bucketSpec: BucketSpec,
@@ -408,12 +413,12 @@ case class FileSourceScanExec(
   }
 
   /**
-   * Create an RDD for non-bucketed reads.
-   * The bucketed variant of this function is [[createBucketedReadRDD]].
+   *为非分段读取创建RDD。
+   *此函数的分块变体是[[ createBucketedReadRDD ]]。
    *
-   * @param readFile a function to read each (part of a) file.
-   * @param selectedPartitions Hive-style partition that are part of the read.
-   * @param fsRelation [[HadoopFsRelation]] associated with the read.
+   * @param  readFile读取每个（部分）文件的函数。
+   * @param  selectedPartitions Hive风格的分区是读取的一部分。
+   * @param  fsRelation [[ HadoopFsRelation ]]与读取相关联。
    */
   private def createNonBucketedReadRDD(
       readFile: (PartitionedFile) => Iterator[InternalRow],
