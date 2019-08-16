@@ -607,8 +607,8 @@ class SQLAppStatusListenerSuite extends SparkFunSuite with SharedSQLContext with
 
 
 /**
- * A dummy [[org.apache.spark.sql.execution.SparkPlan]] that updates a [[SQLMetrics]]
- * on the driver.
+ *更新[[ SQLMetrics ]]的虚拟[[ org.apache.spark.sql.execution.SparkPlan ]]
+ *关于驱动。
  */
 private case class MyPlan(sc: SparkContext, expectedValue: Long, expectedValue2: Long)
   extends LeafExecNode {
@@ -624,8 +624,8 @@ private case class MyPlan(sc: SparkContext, expectedValue: Long, expectedValue2:
     longMetric("dummy") += expectedValue
     longMetric("dummy2") += expectedValue2
 
-    // postDriverMetricUpdates may happen multiple time in a query.
-    // (normally from different operators, but for the sake of testing, from one operator)
+    // postDriverMetricUpdates可能会在查询中多次发生。
+    //（通常来自不同的运营商，但为了测试，来自一个运营商）
     SQLMetrics.postDriverMetricUpdates(
       sc,
       sc.getLocalProperty(SQLExecution.EXECUTION_ID_KEY),
