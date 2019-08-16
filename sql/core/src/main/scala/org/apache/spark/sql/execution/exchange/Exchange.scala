@@ -42,14 +42,14 @@ abstract class Exchange extends UnaryExecNode {
 }
 
 /**
- * A wrapper for reused exchange to have different output, because two exchanges which produce
- * logically identical output will have distinct sets of output attribute ids, so we need to
- * preserve the original ids because they're what downstream operators are expecting.
+ *重复使用交换的包装器具有不同的输出，因为产生了两个交换
+ *逻辑上相同的输出将具有不同的输出属性ID集，因此我们需要
+ *保留原始ID，因为它们是下游运营商所期望的。
  */
 case class ReusedExchangeExec(override val output: Seq[Attribute], child: Exchange)
   extends LeafExecNode {
 
-  // Ignore this wrapper for canonicalizing.
+ //忽略规范化的这个包装器。
   override def doCanonicalize(): SparkPlan = child.canonicalized
 
   def doExecute(): RDD[InternalRow] = {
@@ -60,8 +60,8 @@ case class ReusedExchangeExec(override val output: Seq[Attribute], child: Exchan
     child.executeBroadcast()
   }
 
-  // `ReusedExchangeExec` can have distinct set of output attribute ids from its child, we need
-  // to update the attribute ids in `outputPartitioning` and `outputOrdering`.
+  // `ReusedExchangeExec`可以从它的子节点获得不同的输出属性id集合，我们需要
+  //更新`outputPartitioning`和`outputOrdering`中的属性id。
   private lazy val updateAttr: Expression => Expression = {
     val originalAttrToNewAttr = AttributeMap(child.output.zip(output))
     e => e.transform {
@@ -80,8 +80,7 @@ case class ReusedExchangeExec(override val output: Seq[Attribute], child: Exchan
 }
 
 /**
- * Find out duplicated exchanges in the spark plan, then use the same exchange for all the
- * references.
+ *找出SparkPlan中的重复交换，然后使用相同的交换所有参考。
  */
 case class ReuseExchange(conf: SQLConf) extends Rule[SparkPlan] {
 
@@ -89,18 +88,18 @@ case class ReuseExchange(conf: SQLConf) extends Rule[SparkPlan] {
     if (!conf.exchangeReuseEnabled) {
       return plan
     }
-    // Build a hash map using schema of exchanges to avoid O(N*N) sameResult calls.
+    //使用交换模式构建哈希映射以避免O（N * N）个sameResult调用。
     val exchanges = mutable.HashMap[StructType, ArrayBuffer[Exchange]]()
     plan.transformUp {
       case exchange: Exchange =>
-        // the exchanges that have same results usually also have same schemas (same column names).
+         //具有相同结果的交换通常也具有相同的模式（相同的列名）。
         val sameSchema = exchanges.getOrElseUpdate(exchange.schema, ArrayBuffer[Exchange]())
         val samePlan = sameSchema.find { e =>
           exchange.sameResult(e)
         }
         if (samePlan.isDefined) {
-          // Keep the output of this exchange, the following plans require that to resolve
-          // attributes.
+          //保持此交换的输出，以下计划要求解决
+          //属性。
           ReusedExchangeExec(exchange.output, samePlan.get)
         } else {
           sameSchema += exchange
