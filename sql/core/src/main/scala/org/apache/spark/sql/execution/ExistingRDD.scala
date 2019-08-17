@@ -55,18 +55,18 @@ case class ExternalRDD[T](
   )
 }
 
-/** Physical plan node for scanning data from an RDD. */
+/** 从RDD获取数据的物理执行计划*/
 case class ExternalRDDScanExec[T](
     outputObjAttr: Attribute,
     rdd: RDD[T]) extends LeafExecNode with ObjectProducerExec {
-
+  //懒加载机制中的指标
   override lazy val metrics = Map(
     "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"))
-
+  //rdd的名称
   private def rddName: String = Option(rdd.name).map(n => s" $n").getOrElse("")
-
+  //节点名称
   override val nodeName: String = s"Scan$rddName"
-
+  //执行入口出
   protected override def doExecute(): RDD[InternalRow] = {
     val numOutputRows = longMetric("numOutputRows")
     val outputDataType = outputObjAttr.dataType
