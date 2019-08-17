@@ -25,13 +25,14 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.LeafExecNode
 
 /**
- * Physical plan node for dropping a table.
+ * 删除一张数据表的物理执行计划
  */
 case class DropTableExec(catalog: TableCatalog, ident: Identifier, ifExists: Boolean)
   extends LeafExecNode {
 
   override def doExecute(): RDD[InternalRow] = {
     if (catalog.tableExists(ident)) {
+      //通过catalog删除一张数据表
       catalog.dropTable(ident)
     } else if (!ifExists) {
       throw new NoSuchTableException(ident)
