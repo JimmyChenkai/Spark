@@ -36,10 +36,11 @@ case class CreateTableExec(
     tableProperties: Map[String, String],
     ignoreIfExists: Boolean) extends LeafExecNode {
   import org.apache.spark.sql.catalog.v2.CatalogV2Implicits._
-
+ 
   override protected def doExecute(): RDD[InternalRow] = {
     if (!catalog.tableExists(identifier)) {
       try {
+        //通过catalog创建一张数据表  
         catalog.createTable(identifier, tableSchema, partitioning.toArray, tableProperties.asJava)
       } catch {
         case _: TableAlreadyExistsException if ignoreIfExists =>
