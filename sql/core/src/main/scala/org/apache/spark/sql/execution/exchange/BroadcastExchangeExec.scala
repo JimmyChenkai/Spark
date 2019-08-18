@@ -37,8 +37,8 @@ import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.util.{SparkFatalException, ThreadUtils}
 
 /**
- * A [[BroadcastExchangeExec]] collects, transforms and finally broadcasts the result of
- * a transformed SparkPlan.
+ * [[ BroadcastExchangeExec ]]收集，转换并最终广播结果
+ * 改造后的SparkPlan。
  */
 case class BroadcastExchangeExec(
     mode: BroadcastMode,
@@ -62,8 +62,8 @@ case class BroadcastExchangeExec(
   private lazy val promise = Promise[broadcast.Broadcast[Any]]()
 
   /**
-   * For registering callbacks on `relationFuture`.
-   * Note that calling this field will not start the execution of broadcast job.
+   * 用于在`relationFuture`上注册回调。
+   * 请注意，调用此字段不会开始执行广播作业。
    */
   @transient
   lazy val completionFuture: scala.concurrent.Future[broadcast.Broadcast[Any]] = promise.future
@@ -73,19 +73,18 @@ case class BroadcastExchangeExec(
 
   @transient
   private[sql] lazy val relationFuture: Future[broadcast.Broadcast[Any]] = {
-    // relationFuture is used in "doExecute". Therefore we can get the execution id correctly here.
+   // relationFuture用于“doExecute”。因此，我们可以在这里正确获取执行ID。
     val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
     val task = new Callable[broadcast.Broadcast[Any]]() {
       override def call(): broadcast.Broadcast[Any] = {
-        // This will run in another thread. Set the execution id so that we can connect these jobs
-        // with the correct execution.
+        //这将在另一个线程中运行。设置执行ID，以便我们可以连接这些作业正确执行       
         SQLExecution.withExecutionId(sqlContext.sparkSession, executionId) {
           try {
-            // Setup a job group here so later it may get cancelled by groupId if necessary.
+            //在此处设置作业组，以便稍后可能会在必要时被groupId取消。
             sparkContext.setJobGroup(runId.toString, s"broadcast exchange (runId $runId)",
               interruptOnCancel = true)
             val beforeCollect = System.nanoTime()
-            // Use executeCollect/executeCollectIterator to avoid conversion to Scala types
+            //使用executeCollect / executeCollectIterator来避免转换为Scala类型
             val (numRows, input) = child.executeCollectIterator()
             if (numRows >= 512000000) {
               throw new SparkException(
@@ -95,7 +94,7 @@ case class BroadcastExchangeExec(
             val beforeBuild = System.nanoTime()
             longMetric("collectTime") += NANOSECONDS.toMillis(beforeBuild - beforeCollect)
 
-            // Construct the relation.
+            //构造关系。
             val relation = mode.transform(input, Some(numRows))
 
             val dataSize = relation match {
@@ -117,7 +116,7 @@ case class BroadcastExchangeExec(
             val beforeBroadcast = System.nanoTime()
             longMetric("buildTime") += NANOSECONDS.toMillis(beforeBroadcast - beforeBuild)
 
-            // Broadcast the relation
+            //广播关系
             val broadcasted = sparkContext.broadcast(relation)
             longMetric("broadcastTime") += NANOSECONDS.toMillis(
               System.nanoTime() - beforeBroadcast)
@@ -126,9 +125,9 @@ case class BroadcastExchangeExec(
             promise.success(broadcasted)
             broadcasted
           } catch {
-            // SPARK-24294: To bypass scala bug: https://github.com/scala/bug/issues/9554, we throw
-            // SparkFatalException, which is a subclass of Exception. ThreadUtils.awaitResult
-            // will catch this exception and re-throw the wrapped fatal throwable.
+            // SPARK-24294：绕过scala bug：https：//github.com/scala/bug/issues/9554，我们抛出
+            // SparkFatalException，它是Exception的子类。ThreadUtils.awaitResult
+            //将捕获此异常并重新抛出包装的致命throwable。
             case oe: OutOfMemoryError =>
               val ex = new SparkFatalException(
                 new OutOfMemoryError("Not enough memory to build and broadcast the table to all " +
@@ -153,7 +152,7 @@ case class BroadcastExchangeExec(
   }
 
   override protected def doPrepare(): Unit = {
-    // Materialize the future.
+    //实现未来。
     relationFuture
   }
 
