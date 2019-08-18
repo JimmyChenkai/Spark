@@ -39,7 +39,7 @@ import org.apache.spark.util.MutablePair
 import org.apache.spark.util.collection.unsafe.sort.{PrefixComparators, RecordComparator}
 
 /**
- * Performs a shuffle that will result in the desired `newPartitioning`.
+ *执行一个将导致所需`newPartitioning`的shuffle。
  */
 case class ShuffleExchangeExec(
     var newPartitioning: Partitioning,
