@@ -486,10 +486,10 @@ trait InputRDDCodegen extends CodegenSupport {
 }
 
 /**
- * InputAdapter is used to hide a SparkPlan from a subtree that supports codegen.
+ * InputAdapter用于从支持codegen的子树隐藏SparkPlan。
  *
- * This is the leaf node of a tree with WholeStageCodegen that is used to generate code
- * that consumes an RDD iterator of InternalRow.
+ *这是具有WholeStageCodegen的树的叶节点，用于生成代码
+ *使用InternalRow的RDD迭代器。
  */
 case class InputAdapter(child: SparkPlan) extends UnaryExecNode with InputRDDCodegen {
 
@@ -509,10 +509,10 @@ case class InputAdapter(child: SparkPlan) extends UnaryExecNode with InputRDDCod
 
   override def inputRDD: RDD[InternalRow] = child.execute()
 
-  // This is a leaf node so the node can produce limit not reached checks.
+  //这是一个叶节点，因此节点可以生成限制未到达的检查。
   override protected def canCheckLimitNotReached: Boolean = true
 
-  // InputAdapter does not need UnsafeProjection.
+  // InputAdapter不需要UnsafeProjection。
   protected val createUnsafeProjection: Boolean = false
 
   override def generateTreeString(
