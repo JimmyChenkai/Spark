@@ -46,6 +46,7 @@ case class BroadcastExchangeExec(
 
   private[sql] val runId: UUID = UUID.randomUUID
 
+  //metrics收集，datasize;collectiTime;buildTime;broadcastTime  
   override lazy val metrics = Map(
     "dataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size"),
     "collectTime" -> SQLMetrics.createTimingMetric(sparkContext, "time to collect"),
