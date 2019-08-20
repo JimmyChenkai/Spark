@@ -43,10 +43,10 @@ import org.apache.spark.sql.hive.client.HiveClientImpl
  * In the future we should converge the write path for Hive with the normal data source write path,
  * as defined in `org.apache.spark.sql.execution.datasources.FileFormatWriter`.
  *
- * @param table the metadata of the table.
- * @param partition a map from the partition key to the partition value (optional). If the partition
- *                  value is optional, dynamic partition insert will be performed.
- *                  As an example, `INSERT INTO tbl PARTITION (a=1, b=2) AS ...` would have
+ * @param  表格的元数据。
+ * @参数 划分从分区键分隔值（可选）的地图。如果是分区
+ * value是可选的，将执行动态分区插入。
+ *                  一个例子, `INSERT INTO tbl PARTITION (a=1, b=2) AS ...` would have
  *
  *                  {{{
  *                  Map('a' -> Some('1'), 'b' -> Some('2'))
@@ -58,10 +58,10 @@ import org.apache.spark.sql.hive.client.HiveClientImpl
  *                  {{{
  *                  Map('a' -> Some('1'), 'b' -> None)
  *                  }}}.
- * @param query the logical plan representing data to write to.
- * @param overwrite overwrite existing table or partitions.
- * @param ifPartitionNotExists If true, only write if the partition does not exist.
- *                                   Only valid for static partitions.
+ * @param  查询表示要写入的数据的逻辑计划。
+ * @param  覆盖覆盖现有表或分区。
+ * @param  ifPartitionNotExists如果为true，则仅在分区不存在时写入。
+ *仅对静态分区有效。
  */
 case class InsertIntoHiveTable(
     table: CatalogTable,
@@ -72,23 +72,23 @@ case class InsertIntoHiveTable(
     outputColumnNames: Seq[String]) extends SaveAsHiveFile {
 
   /**
-   * Inserts all the rows in the table into Hive.  Row objects are properly serialized with the
-   * `org.apache.hadoop.hive.serde2.SerDe` and the
-   * `org.apache.hadoop.mapred.OutputFormat` provided by the table definition.
+   *将表中的所有行插入Hive。行对象已正确序列化
+   *`org.apache.hadoop.hive.serde2.SerDe`和
+   *表定义提供的`org.apache.hadoop.mapred.OutputFormat`。
    */
   override def run(sparkSession: SparkSession, child: SparkPlan): Seq[Row] = {
     val externalCatalog = sparkSession.sharedState.externalCatalog
     val hadoopConf = sparkSession.sessionState.newHadoopConf()
 
     val hiveQlTable = HiveClientImpl.toHiveTable(table)
-    // Have to pass the TableDesc object to RDD.mapPartitions and then instantiate new serializer
-    // instances within the closure, since Serializer is not serializable while TableDesc is.
+     //必须将TableDesc对象传递给RDD.mapPartitions，然后实例化新的序列化程序
+     //闭包中的实例，因为在TableDesc时序列化程序不可序列化。
     val tableDesc = new TableDesc(
       hiveQlTable.getInputFormatClass,
-      // The class of table should be org.apache.hadoop.hive.ql.metadata.Table because
-      // getOutputFormatClass will use HiveFileFormatUtils.getOutputFormatSubstitute to
-      // substitute some output formats, e.g. substituting SequenceFileOutputFormat to
-      // HiveSequenceFileOutputFormat.
+      //表的类应该是org.apache.hadoop.hive.ql.metadata.Table，因为
+      // getOutputFormatClass将使用HiveFileFormatUtils.getOutputFormatSubstitute来
+      //替换一些输出格式，例如将SequenceFileOutputFormat替换为
+      // HiveSequenceFileOutputFormat。
       hiveQlTable.getOutputFormatClass,
       hiveQlTable.getMetadata
     )
@@ -98,21 +98,21 @@ case class InsertIntoHiveTable(
     try {
       processInsert(sparkSession, externalCatalog, hadoopConf, tableDesc, tmpLocation, child)
     } finally {
-      // Attempt to delete the staging directory and the inclusive files. If failed, the files are
-      // expected to be dropped at the normal termination of VM since deleteOnExit is used.
+      //尝试删除登台目录和包含文件。如果失败，则文件为
+      //由于使用了deleteOnExit，因此预计会在VM的正常终止时被删除。
       deleteExternalTmpPath(hadoopConf)
     }
 
-    // un-cache this table.
+    //取消缓存此表。
     sparkSession.catalog.uncacheTable(table.identifier.quotedString)
     sparkSession.sessionState.catalog.refreshTable(table.identifier)
 
     CommandUtils.updateTableStats(sparkSession, table)
 
-    // It would be nice to just return the childRdd unchanged so insert operations could be chained,
-    // however for now we return an empty list to simplify compatibility checks with hive, which
-    // does not return anything for insert operations.
-    // TODO: implement hive compatibility as rules.
+    //最好只返回childRdd，这样就可以链接插入操作了，
+    //但是现在我们返回一个空列表来简化与hive的兼容性检查
+    //不会为插入操作返回任何内容。
+    // TODO：将hive兼容性作为规则实现。
     Seq.empty[Row]
   }
 
@@ -132,11 +132,11 @@ case class InsertIntoHiveTable(
       case (key, None) => key -> ""
     }
 
-    // All partition column names in the format of "<column name 1>/<column name 2>/..."
+    //所有分区列名称格式为“<列名1> / <列名2> / ...”
     val partitionColumns = fileSinkConf.getTableInfo.getProperties.getProperty("partition_columns")
     val partitionColumnNames = Option(partitionColumns).map(_.split("/")).getOrElse(Array.empty)
 
-    // By this time, the partition map must match the table's partition columns
+    //此时，分区映射必须与表的分区列匹配
     if (partitionColumnNames.toSet != partition.keySet) {
       throw new SparkException(
         s"""Requested partitioning does not match the ${table.identifier.table} table:
@@ -144,20 +144,20 @@ case class InsertIntoHiveTable(
            |Table partitions: ${table.partitionColumnNames.mkString(",")}""".stripMargin)
     }
 
-    // Validate partition spec if there exist any dynamic partitions
+    //如果存在任何动态分区，则验证分区规范
     if (numDynamicPartitions > 0) {
-      // Report error if dynamic partitioning is not enabled
+      //如果未启用动态分区，则报告错误
       if (!hadoopConf.get("hive.exec.dynamic.partition", "true").toBoolean) {
         throw new SparkException(ErrorMsg.DYNAMIC_PARTITION_DISABLED.getMsg)
       }
 
-      // Report error if dynamic partition strict mode is on but no static partition is found
+      //如果启用了动态分区严格模式但未找到静态分区，则报告错误
       if (numStaticPartitions == 0 &&
         hadoopConf.get("hive.exec.dynamic.partition.mode", "strict").equalsIgnoreCase("strict")) {
         throw new SparkException(ErrorMsg.DYNAMIC_PARTITION_STRICT_MODE.getMsg)
       }
 
-      // Report error if any static partition appears after a dynamic partition
+      //如果动态分区后出现任何静态分区，则报告错误
       val isDynamic = partitionColumnNames.map(partitionSpec(_).isEmpty)
       if (isDynamic.init.zip(isDynamic.tail).contains((true, false))) {
         throw new AnalysisException(ErrorMsg.PARTITION_DYN_STA_ORDER.getMsg)
@@ -166,9 +166,9 @@ case class InsertIntoHiveTable(
 
     table.bucketSpec match {
       case Some(bucketSpec) =>
-        // Writes to bucketed hive tables are allowed only if user does not care about maintaining
-        // table's bucketing ie. both "hive.enforce.bucketing" and "hive.enforce.sorting" are
-        // set to false
+        //只有当用户不关心维护时，才允许写入bucketed hive表
+        //表的分组即。“hive.enforce.bucketing”和“hive.enforce.sorting”都是
+        //设置为false
         val enforceBucketingConfig = "hive.enforce.bucketing"
         val enforceSortingConfig = "hive.enforce.sorting"
 
@@ -182,16 +182,18 @@ case class InsertIntoHiveTable(
           logWarning(message + s" Inserting data anyways since both $enforceBucketingConfig and " +
             s"$enforceSortingConfig are set to false.")
         }
-      case _ => // do nothing since table has no bucketing
+      case _ => //由于表没有bucketing，所以什么都不做
     }
 
+    //分区属性  
     val partitionAttributes = partitionColumnNames.takeRight(numDynamicPartitions).map { name =>
       query.resolve(name :: Nil, sparkSession.sessionState.analyzer.resolver).getOrElse {
         throw new AnalysisException(
           s"Unable to resolve $name given [${query.output.map(_.name).mkString(", ")}]")
       }.asInstanceOf[Attribute]
     }
-
+    
+    //保存为hive文件   
     saveAsHiveFile(
       sparkSession = sparkSession,
       plan = child,
@@ -210,10 +212,10 @@ case class InsertIntoHiveTable(
           overwrite,
           numDynamicPartitions)
       } else {
-        // scalastyle:off
-        // ifNotExists is only valid with static partition, refer to
+        // scalastyle：关闭
+        // ifNotExists仅对静态分区有效，请参阅
         // https://cwiki.apache.org/confluence/display/Hive/LanguageManual+DML#LanguageManualDML-InsertingdataintoHiveTablesfromqueries
-        // scalastyle:on
+        // scalastyle：on
         val oldPart =
           externalCatalog.getPartitionOption(
             table.database,
@@ -223,10 +225,10 @@ case class InsertIntoHiveTable(
         var doHiveOverwrite = overwrite
 
         if (oldPart.isEmpty || !ifPartitionNotExists) {
-          // SPARK-18107: Insert overwrite runs much slower than hive-client.
-          // Newer Hive largely improves insert overwrite performance. As Spark uses older Hive
-          // version and we may not want to catch up new Hive version every time. We delete the
-          // Hive partition first and then load data file into the Hive partition.
+          // SPARK-18107：插入覆盖运行比hive-client慢得多。
+          //较新的Hive在很大程度上提高了插入覆盖性能。因为Spark使用较旧的Hive
+          //版本，我们可能不想每次都赶上新的Hive版本。我们删除了
+          //首先进行Hive分区，然后将数据文件加载到Hive分区。
           if (oldPart.nonEmpty && overwrite) {
             oldPart.get.storage.locationUri.foreach { uri =>
               val partitionPath = new Path(uri)
@@ -236,14 +238,14 @@ case class InsertIntoHiveTable(
                   throw new RuntimeException(
                     "Cannot remove partition directory '" + partitionPath.toString)
                 }
-                // Don't let Hive do overwrite operation since it is slower.
+                //不要让Hive覆盖操作，因为它比较慢。
                 doHiveOverwrite = false
               }
             }
           }
 
-          // inheritTableSpecs is set to true. It should be set to false for an IMPORT query
-          // which is currently considered as a Hive native command.
+          // inheritTableSpecs设置为true。对于IMPORT查询，它应设置为false
+          //当前被视为Hive本机命令。
           val inheritTableSpecs = true
           externalCatalog.loadPartition(
             table.database,
