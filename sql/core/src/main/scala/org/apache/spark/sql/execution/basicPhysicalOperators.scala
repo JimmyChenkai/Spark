@@ -230,14 +230,14 @@ case class FilterExec(condition: Expression, child: SparkPlan)
 }
 
 /**
- * Physical plan for sampling the dataset.
+ * 采样数据集的物理计划。
  *
- * @param lowerBound Lower-bound of the sampling probability (usually 0.0)
- * @param upperBound Upper-bound of the sampling probability. The expected fraction sampled
- *                   will be ub - lb.
- * @param withReplacement Whether to sample with replacement.
- * @param seed the random seed
- * @param child the SparkPlan
+ * @param  lowerBound采样概率的下限（通常为0.0）
+ * @param  upperBound采样概率的上限。采样的预期分数
+ *         将是ub  -  lb.
+ * @param  withReplacement是否更换样品。
+ * @param  播种随机种子
+ * @param  孩子 SparkPlan
  */
 case class SampleExec(
     lowerBound: Double,
@@ -254,8 +254,8 @@ case class SampleExec(
 
   protected override def doExecute(): RDD[InternalRow] = {
     if (withReplacement) {
-      // Disable gap sampling since the gap sampling method buffers two rows internally,
-      // requiring us to copy the row, which is more expensive than the random number generator.
+      //禁用间隙采样，因为间隙采样方法在内部缓冲两行，
+      //要求我们复制行，这比随机数生成器贵。
       new PartitionwiseSampledRDD[InternalRow, InternalRow](
         child.execute(),
         new PoissonSampler[InternalRow](upperBound - lowerBound, useGapSamplingIfPossible = false),
@@ -266,8 +266,8 @@ case class SampleExec(
     }
   }
 
-  // Mark this as empty. This plan doesn't need to evaluate any inputs and can defer the evaluation
-  // to the parent operator.
+  //将此标记为空 该计划不需要评估任何输入，可以推迟评估
+  //到父运算符。
   override def usedInputs: AttributeSet = AttributeSet.empty
 
   override def inputRDDs(): Seq[RDD[InternalRow]] = {
