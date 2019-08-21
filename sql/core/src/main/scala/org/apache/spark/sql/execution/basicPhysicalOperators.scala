@@ -34,23 +34,24 @@ import org.apache.spark.sql.types.{LongType, StructType}
 import org.apache.spark.util.ThreadUtils
 import org.apache.spark.util.random.{BernoulliCellSampler, PoissonSampler}
 
-/** Physical plan for Project. */
+/** Project的物理执行计划. */
 case class ProjectExec(projectList: Seq[NamedExpression], child: SparkPlan)
   extends UnaryExecNode with CodegenSupport {
 
+  //输出属性集合  
   override def output: Seq[Attribute] = projectList.map(_.toAttribute)
-
+  //输入RDD InternalRow
   override def inputRDDs(): Seq[RDD[InternalRow]] = {
     child.asInstanceOf[CodegenSupport].inputRDDs()
   }
-
+  
   protected override def doProduce(ctx: CodegenContext): String = {
     child.asInstanceOf[CodegenSupport].produce(ctx, this)
   }
 
   override def usedInputs: AttributeSet = {
-    // only the attributes those are used at least twice should be evaluated before this plan,
-    // otherwise we could defer the evaluation until output attribute is actually used.
+    //在此计划之前，应仅评估至少使用两次的属性，
+    //否则我们可以推迟评估，直到实际使用输出属性。
     val usedExprIds = projectList.flatMap(_.collect {
       case a: Attribute => a.exprId
     })
@@ -61,7 +62,7 @@ case class ProjectExec(projectList: Seq[NamedExpression], child: SparkPlan)
   override def doConsume(ctx: CodegenContext, input: Seq[ExprCode], row: ExprCode): String = {
     val exprs = bindReferences[Expression](projectList, child.output)
     val resultVars = exprs.map(_.genCode(ctx))
-    // Evaluation of non-deterministic expressions can't be deferred.
+    //不能推迟评估非确定性表达式。
     val nonDeterministicAttrs = projectList.filterNot(_.deterministic).map(_.toAttribute)
     s"""
        |${evaluateRequiredVariables(output, resultVars, AttributeSet(nonDeterministicAttrs))}
