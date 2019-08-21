@@ -28,25 +28,30 @@ import org.apache.spark.util.collection.ExternalSorter
 
 
 /**
- * A reference sort implementation used to compare against our normal sort.
+ * 用于与我们的正常排序进行比较的引用排序实现。
  */
 case class ReferenceSort(
     sortOrder: Seq[SortOrder],
     global: Boolean,
     child: SparkPlan)
   extends UnaryExecNode {
-
+ 
+  //判断子节点一定是分布排序     
   override def requiredChildDistribution: Seq[Distribution] =
     if (global) OrderedDistribution(sortOrder) :: Nil else UnspecifiedDistribution :: Nil
-
+  //代码执行入口出
   protected override def doExecute(): RDD[InternalRow] = attachTree(this, "sort") {
     child.execute().mapPartitions( { iterator =>
+      //重新排序  
       val ordering = newOrdering(sortOrder, child.output)
       val sorter = new ExternalSorter[InternalRow, Null, InternalRow](
         TaskContext.get(), ordering = Some(ordering))
       sorter.insertAll(iterator.map(r => (r.copy(), null)))
       val baseIterator = sorter.iterator.map(_._1)
       val context = TaskContext.get()
+      //更新Disk磁盘环形溢出spill信息
+      //内存溢出spill信息
+      //执行内存信息
       context.taskMetrics().incDiskBytesSpilled(sorter.diskBytesSpilled)
       context.taskMetrics().incMemoryBytesSpilled(sorter.memoryBytesSpilled)
       context.taskMetrics().incPeakExecutionMemory(sorter.peakMemoryUsedBytes)
