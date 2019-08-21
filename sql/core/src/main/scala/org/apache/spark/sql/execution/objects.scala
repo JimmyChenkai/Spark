@@ -369,8 +369,8 @@ case class AppendColumnsWithObjectExec(
 }
 
 /**
- * Groups the input rows together and calls the function with each group and an iterator containing
- * all elements in the group.  The result of this function is flattened before being output.
+ * 将输入行组合在一起，并使用每个组和包含的迭代器调用函数
+ * 组中的所有元素。在输出之前，此功能的结果是平坦的。
  */
 case class MapGroupsExec(
     func: (Any, Iterator[Any]) => TraversableOnce[Any],
