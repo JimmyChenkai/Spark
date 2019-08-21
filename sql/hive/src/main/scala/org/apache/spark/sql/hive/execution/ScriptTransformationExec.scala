@@ -46,11 +46,11 @@ import org.apache.spark.sql.types.DataType
 import org.apache.spark.util.{CircularBuffer, RedirectThread, SerializableConfiguration, Utils}
 
 /**
- * Transforms the input by forking and running the specified script.
+ * 通过分叉和运行指定的脚本来转换输入
  *
- * @param input the set of expression that should be passed to the script.
- * @param script the command that should be executed.
- * @param output the attributes that are produced by the script.
+ * @param 输入应传递给脚本的表达式集。
+ * @param 脚本应该执行的命令。
+ * @param 输出脚本生成的属性。
  */
 case class ScriptTransformationExec(
     input: Seq[Expression],
@@ -75,10 +75,9 @@ case class ScriptTransformationExec(
       val outputStream = proc.getOutputStream
       val errorStream = proc.getErrorStream
 
-      // In order to avoid deadlocks, we need to consume the error output of the child process.
-      // To avoid issues caused by large error output, we use a circular buffer to limit the amount
-      // of error output that we retain. See SPARK-7862 for more discussion of the deadlock / hang
-      // that motivates this.
+      //为了避免死锁，我们需要使用子进程的错误输出。
+      //为避免大错误输出引起的问题，我们使用循环缓冲区来限制数量
+      //我们保留的错误输出。有关死锁/挂起的更多讨论，请参见SPARK-7862
       val stderrBuffer = new CircularBuffer(2048)
       new RedirectThread(
         errorStream,
@@ -87,12 +86,11 @@ case class ScriptTransformationExec(
 
       val outputProjection = new InterpretedProjection(input, child.output)
 
-      // This nullability is a performance optimization in order to avoid an Option.foreach() call
-      // inside of a loop
+      //这种可为空性是一种性能优化，以避免Option.foreach（）调用在循环内部
       @Nullable val (inputSerde, inputSoi) = ioschema.initInputSerDe(input).getOrElse((null, null))
 
-      // This new thread will consume the ScriptTransformation's input rows and write them to the
-      // external process. That process's output will be read by this current thread.
+      //这个新线程将使用ScriptTransformation的输入行并将它们写入
+      //外部流程 该进程的输出将由当前线程读取。
       val writerThread = new ScriptTransformationWriterThread(
         inputIterator,
         input.map(_.dataType),
@@ -107,8 +105,7 @@ case class ScriptTransformationExec(
         hadoopConf
       )
 
-      // This nullability is a performance optimization in order to avoid an Option.foreach() call
-      // inside of a loop
+      //这种可为空性是一种性能优化，以避免Option.foreach（）调用在循环内部
       @Nullable val (outputSerde, outputSoi) = {
         ioschema.initOutputSerDe(output).getOrElse((null, null))
       }
@@ -170,10 +167,10 @@ case class ScriptTransformationExec(
                   scriptOutputWritable.readFields(scriptOutputStream)
                 } catch {
                   case _: EOFException =>
-                    // This means that the stdout of `proc` (ie. TRANSFORM process) has exhausted.
-                    // Ideally the proc should *not* be alive at this point but
-                    // there can be a lag between EOF being written out and the process
-                    // being terminated. So explicitly waiting for the process to be done.
+                    //这意味着`proc`（即TRANSFORM进程）的标准输出已经耗尽。
+                    //理想情况下，proc应该*不*在这一点上活着但是
+                    // EOF写出和进程之间可能存在延迟
+                    //被终止 所以明确地等待进程完成。
                     proc.waitFor()
                     checkFailureAndPropagate()
                     return false
@@ -184,8 +181,8 @@ case class ScriptTransformationExec(
             true
           } catch {
             case NonFatal(e) =>
-              // If this exception is due to abrupt / unclean termination of `proc`,
-              // then detect it and propagate a better exception message for end users
+              //如果此异常是由于`proc`的突然/不干净终止，
+              //然后检测它并为最终用户传播更好的异常消息
               checkFailureAndPropagate(e)
 
               throw e
@@ -239,7 +236,7 @@ case class ScriptTransformationExec(
         val proj = UnsafeProjection.create(schema)
         processIterator(iter, broadcastedHadoopConf.value).map(proj)
       } else {
-        // If the input iterator has no rows then do not launch the external script.
+        //如果输入迭代器没有行，则不要启动外部脚本。
         Iterator.empty
       }
     }
@@ -264,7 +261,7 @@ private class ScriptTransformationWriterThread(
 
   @volatile private var _exception: Throwable = null
 
-  /** Contains the exception thrown while writing the parent iterator to the external process. */
+  /** 包含将父迭代器写入外部进程时抛出的异常。 */
   def exception: Option[Throwable] = Option(_exception)
 
   override def run(): Unit = Utils.logUncaughtExceptions {
@@ -273,8 +270,8 @@ private class ScriptTransformationWriterThread(
     val dataOutputStream = new DataOutputStream(outputStream)
     @Nullable val scriptInputWriter = ioschema.recordWriter(dataOutputStream, conf).orNull
 
-    // We can't use Utils.tryWithSafeFinally here because we also need a `catch` block, so
-    // let's use a variable to record whether the `finally` block was hit due to an exception
+    //我们不能在这里使用Utils.tryWithSafeFinally因为我们还需要一个`catch`块，所以
+    //让我们使用一个变量来记录`finally`块是否因异常而被命中
     var threwException: Boolean = true
     val len = inputSchema.length
     try {
@@ -308,12 +305,12 @@ private class ScriptTransformationWriterThread(
       }
       threwException = false
     } catch {
-      // SPARK-25158 Exception should not be thrown again, otherwise it will be captured by
-      // SparkUncaughtExceptionHandler, then Executor will exit because of this Uncaught Exception,
-      // so pass the exception to `ScriptTransformationExec` is enough.
+      // SPARK-25158不应再次抛出异常，否则将被捕获
+      // SparkUncaughtExceptionHandler，然后Executor将因为此Uncaught Exception而退出，
+      // 所以将异常传递给`ScriptTransformationExec`就足够了。
       case t: Throwable =>
-        // An error occurred while writing input, so kill the child process. According to the
-        // Javadoc this call will not throw an exception:
+        // 写入输入时发生错误，因此请终止子进程。根据
+        // Javadoc这个调用不会抛出异常：
         _exception = t
         proc.destroy()
         logError("Thread-ScriptTransformation-Feed exit cause by: ", t)
@@ -351,7 +348,7 @@ object HiveScriptIOSchema {
 }
 
 /**
- * The wrapper class of Hive input and output schema properties
+ * Hive输入和输出模式属性的包装类
  */
 case class HiveScriptIOSchema (
     inputRowFormat: Seq[(String, String)],
@@ -416,8 +413,8 @@ case class HiveScriptIOSchema (
     propsMap = propsMap + (serdeConstants.LIST_COLUMN_TYPES -> columnTypesNames)
 
     val properties = new Properties()
-    // Can not use properties.putAll(propsMap.asJava) in scala-2.12
-    // See https://github.com/scala/bug/issues/10418
+    //不能在scala-2.12中使用properties.putAll（propsMap.asJava）
+    //请参阅https://github.com/scala/bug/issues/10418
     propsMap.foreach { case (k, v) => properties.put(k, v) }
     serde.initialize(null, properties)
 
@@ -431,8 +428,8 @@ case class HiveScriptIOSchema (
       val instance = Utils.classForName[RecordReader](klass).getConstructor().
         newInstance()
       val props = new Properties()
-      // Can not use props.putAll(outputSerdeProps.toMap.asJava) in scala-2.12
-      // See https://github.com/scala/bug/issues/10418
+      //不能在scala-2.12中使用props.putAll（outputSerdeProps.toMap.asJava）
+      //请参阅https://github.com/scala/bug/issues/10418
       outputSerdeProps.toMap.foreach { case (k, v) => props.put(k, v) }
       instance.initialize(inputStream, conf, props)
       instance
