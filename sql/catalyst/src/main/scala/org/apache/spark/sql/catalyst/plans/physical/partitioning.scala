@@ -21,23 +21,23 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.types.{DataType, IntegerType}
 
 /**
- * Specifies how tuples that share common expressions will be distributed when a query is executed
- * in parallel on many machines.
+ * 指定在执行查询时如何分配共享公共表达式的元组
+ * 在许多机器上并行。
  *
- * Distribution here refers to inter-node partitioning of data. That is, it describes how tuples
- * are partitioned across physical machines in a cluster. Knowing this property allows some
- * operators (e.g., Aggregate) to perform partition local operations instead of global ones.
+ * 此处的分布是指数据的节点间分区。也就是说，它描述了元组
+ * 在群集中的物理机器之间进行分区。知道这个属性允许一些
+ * 运算符（例如，Aggregate）执行分区本地操作而不是全局操作。
  */
 sealed trait Distribution {
   /**
-   * The required number of partitions for this distribution. If it's None, then any number of
-   * partitions is allowed for this distribution.
+   * 此分发所需的分区数。如果它是None，则任意数量
+   * 此分发允许使用分区。
    */
   def requiredNumPartitions: Option[Int]
 
   /**
-   * Creates a default partitioning for this distribution, which can satisfy this distribution while
-   * matching the given number of partitions.
+   * 为此分发创建默认分区，可以满足此分发
+   * 匹配给定数量的分区。
    */
   def createPartitioning(numPartitions: Int): Partitioning
 }
@@ -136,8 +136,8 @@ case class OrderedDistribution(ordering: Seq[SortOrder]) extends Distribution {
 }
 
 /**
- * Represents data where tuples are broadcasted to every node. It is quite common that the
- * entire set of tuples is transformed into different data structure.
+ * 表示将元组广播到每个节点的数据。这是很常见的
+ * 整个元组集转换为不同的数据结构。
  */
 case class BroadcastDistribution(mode: BroadcastMode) extends Distribution {
   override def requiredNumPartitions: Option[Int] = Some(1)
@@ -155,29 +155,29 @@ case class BroadcastDistribution(mode: BroadcastMode) extends Distribution {
  *   2. if it can satisfy a given distribution.
  */
 trait Partitioning {
-  /** Returns the number of partitions that the data is split across */
+  /** 返回数据分割的分区数 */
   val numPartitions: Int
 
   /**
-   * Returns true iff the guarantees made by this [[Partitioning]] are sufficient
-   * to satisfy the partitioning scheme mandated by the `required` [[Distribution]],
-   * i.e. the current dataset does not need to be re-partitioned for the `required`
-   * Distribution (it is possible that tuples within a partition need to be reorganized).
+   *如果此[[ Partitioning ]] 所做的保证足够，则返回true
+   *满足`required` [[ Distribution ]] 规定的分区方案，
+   *即当前数据集不需要为“required”重新分区
+   *分布（可能需要重新组织分区中的元组）。
    *
-   * A [[Partitioning]] can never satisfy a [[Distribution]] if its `numPartitions` does't match
-   * [[Distribution.requiredNumPartitions]].
+   *如果[ numPartitions]不匹配，[[ Partitioning ]]永远不能满足[[ Distribution ]]
+   * [[ Distribution.requiredNumPartitions ]]。
    */
   final def satisfies(required: Distribution): Boolean = {
     required.requiredNumPartitions.forall(_ == numPartitions) && satisfies0(required)
   }
 
   /**
-   * The actual method that defines whether this [[Partitioning]] can satisfy the given
-   * [[Distribution]], after the `numPartitions` check.
+   *定义此[[ Partitioning ]] 是否能满足给定的实际方法
+   * [[ Distribution ]]，在`numPartitions`检查之后。
    *
-   * By default a [[Partitioning]] can satisfy [[UnspecifiedDistribution]], and [[AllTuples]] if
-   * the [[Partitioning]] only have one partition. Implementations can also overwrite this method
-   * with special logic.
+   *默认情况下，[[ Partitioning ]]可以满足[[ UnspecifiedDistribution ]]和[[ AllTuples ]]
+   * [[ Partitioning ]]只有一个分区。实现也可以覆盖此方法
+   *具有特殊逻辑。
    */
   protected def satisfies0(required: Distribution): Boolean = required match {
     case UnspecifiedDistribution => true
@@ -329,8 +329,8 @@ case class PartitioningCollection(partitionings: Seq[Partitioning])
 }
 
 /**
- * Represents a partitioning where rows are collected, transformed and broadcasted to each
- * node in the cluster.
+ * 表示一个分区，其中行被收集，转换并广播到每个行
+ * 群集中的节点。
  */
 case class BroadcastPartitioning(mode: BroadcastMode) extends Partitioning {
   override val numPartitions: Int = 1
