@@ -28,7 +28,7 @@ import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.SQLMetrics
 
 /**
- * Sort-based aggregate operator.
+ * 基于排序的聚合运算符。
  */
 case class SortAggregateExec(
     requiredChildDistributionExpressions: Option[Seq[Expression]],
@@ -75,12 +75,12 @@ case class SortAggregateExec(
   protected override def doExecute(): RDD[InternalRow] = attachTree(this, "execute") {
     val numOutputRows = longMetric("numOutputRows")
     child.execute().mapPartitionsWithIndexInternal { (partIndex, iter) =>
-      // Because the constructor of an aggregation iterator will read at least the first row,
-      // we need to get the value of iter.hasNext first.
+      //因为聚合迭代器的构造函数至少会读取第一行，
+      //我们首先需要获取iter.hasNext的值。
       val hasInput = iter.hasNext
       if (!hasInput && groupingExpressions.nonEmpty) {
-        // This is a grouped aggregate and the input iterator is empty,
-        // so return an empty iterator.
+        //这是一个分组聚合，输入迭代器是空的，
+        //所以返回一个空的迭代器。
         Iterator[UnsafeRow]()
       } else {
         val outputIter = new SortBasedAggregationIterator(
@@ -96,8 +96,8 @@ case class SortAggregateExec(
             newMutableProjection(expressions, inputSchema, subexpressionEliminationEnabled),
           numOutputRows)
         if (!hasInput && groupingExpressions.isEmpty) {
-          // There is no input and there is no grouping expressions.
-          // We need to output a single row as the output.
+          //没有输入，也没有分组表达式。
+          //我们需要输出一行作为输出。
           numOutputRows += 1
           Iterator[UnsafeRow](outputIter.outputForEmptyGroupingKeyWithoutInput())
         } else {
@@ -111,6 +111,7 @@ case class SortAggregateExec(
 
   override def verboseString(maxFields: Int): String = toString(verbose = true, maxFields)
 
+  //重写了toString方法     
   private def toString(verbose: Boolean, maxFields: Int): String = {
     val allAggregateExpressions = aggregateExpressions
 
