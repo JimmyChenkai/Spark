@@ -30,12 +30,10 @@ import org.apache.spark.sql.catalyst.util.DateTimeUtils._
 import org.apache.spark.sql.execution.metric.SQLMetrics
 
 /**
- * Performs (external) sorting.
+ * 执行（外部）排序。
  *
- * @param global when true performs a global sort of all partitions by shuffling the data first
- *               if necessary.
- * @param testSpillFrequency Method for configuring periodic spilling in unit tests. If set, will
- *                           spill every `frequency` records.
+ * @param global when true通过首先对数据进行混洗来执行所有分区的全局排序如有必要。
+ * @param testSpillFrequency在单元测试中配置定期溢出的方法。如果设置，将溢出每个`频率'记录。
  */
 case class SortExec(
     sortOrder: Seq[SortOrder],
@@ -48,8 +46,8 @@ case class SortExec(
 
   override def outputOrdering: Seq[SortOrder] = sortOrder
 
-  // sort performed is local within a given partition so will retain
-  // child operator's partitioning
+  //在给定分区中执行的sort是本地的，因此将保留
+  //子操作符的分区
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
   override def requiredChildDistribution: Seq[Distribution] =
@@ -65,14 +63,14 @@ case class SortExec(
   def createSorter(): UnsafeExternalRowSorter = {
     val ordering = newOrdering(sortOrder, output)
 
-    // The comparator for comparing prefix
+    //用于比较前缀的比较器
     val boundSortExpression = BindReferences.bindReference(sortOrder.head, output)
     val prefixComparator = SortPrefixUtils.getPrefixComparator(boundSortExpression)
 
     val canUseRadixSort = enableRadixSort && sortOrder.length == 1 &&
       SortPrefixUtils.canSortFullyWithPrefix(boundSortExpression)
 
-    // The generator for prefix
+    //前缀的生成器
     val prefixExpr = SortPrefix(boundSortExpression)
     val prefixProjection = UnsafeProjection.create(Seq(prefixExpr))
     val prefixComputer = new UnsafeExternalRowSorter.PrefixComputer {
@@ -105,8 +103,8 @@ case class SortExec(
       val sorter = createSorter()
 
       val metrics = TaskContext.get().taskMetrics()
-      // Remember spill data size of this task before execute this operator so that we can
-      // figure out how many bytes we spilled for this operator.
+      //在执行此运算符之前，请记住此任务的溢出数据大小，以便我们可以
+      //计算出我们为此运算符溢出的字节数。
       val spillSizeBefore = metrics.memoryBytesSpilled
       val sortedIterator = sorter.sort(iter.asInstanceOf[Iterator[UnsafeRow]])
       sortTime += NANOSECONDS.toMillis(sorter.getSortTimeNanos)
@@ -124,17 +122,17 @@ case class SortExec(
     child.asInstanceOf[CodegenSupport].inputRDDs()
   }
 
-  // Name of sorter variable used in codegen.
+   // codegen中使用的分拣变量名称。
   private var sorterVariable: String = _
 
   override protected def doProduce(ctx: CodegenContext): String = {
     val needToSort =
       ctx.addMutableState(CodeGenerator.JAVA_BOOLEAN, "needToSort", v => s"$v = true;")
 
-    // Initialize the class member variables. This includes the instance of the Sorter and
-    // the iterator to return sorted rows.
+    //初始化类成员变量。这包括Sorter和的实例
+    //用于返回已排序行的迭代器。
     val thisPlan = ctx.addReferenceObj("plan", this)
-    // Inline mutable state since not many Sort operations in a task
+    //内联可变状态，因为任务中的排序操作不多
     sorterVariable = ctx.addMutableState(classOf[UnsafeExternalRowSorter].getName, "sorter",
       v => s"$v = $thisPlan.createSorter();", forceInline = true)
     val metrics = ctx.addMutableState(classOf[TaskMetrics].getName, "metrics",
