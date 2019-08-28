@@ -688,7 +688,7 @@ abstract class BaseSubqueryExec extends SparkPlan {
 }
 
 /**
- * Physical plan for a subquery.
+ *子查询的物理计划
  */
 case class SubqueryExec(name: String, child: SparkPlan)
   extends BaseSubqueryExec with UnaryExecNode {
@@ -699,14 +699,13 @@ case class SubqueryExec(name: String, child: SparkPlan)
 
   @transient
   private lazy val relationFuture: Future[Array[InternalRow]] = {
-    // relationFuture is used in "doExecute". Therefore we can get the execution id correctly here.
+     // relationFuture用于“doExecute”。因此，我们可以在这里正确获取执行ID。
     val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
     Future {
-      // This will run in another thread. Set the execution id so that we can connect these jobs
-      // with the correct execution.
+      //这将在另一个线程中运行。设置执行ID，以便我们可以连接这些作业正确执行
       SQLExecution.withExecutionId(sqlContext.sparkSession, executionId) {
         val beforeCollect = System.nanoTime()
-        // Note that we use .executeCollect() because we don't want to convert data to Scala types
+        //请注意，我们使用.executeCollect（），因为我们不想将数据转换为Scala类型
         val rows: Array[InternalRow] = child.executeCollect()
         val beforeBuild = System.nanoTime()
         longMetric("collectTime") += NANOSECONDS.toMillis(beforeBuild - beforeCollect)
