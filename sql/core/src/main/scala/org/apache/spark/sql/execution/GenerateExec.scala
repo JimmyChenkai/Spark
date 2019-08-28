@@ -39,21 +39,21 @@ private[execution] sealed case class LazyIterator(func: () => TraversableOnce[In
 }
 
 /**
- * Applies a [[Generator]] to a stream of input rows, combining the
- * output of each into a new stream of rows.  This operation is similar to a `flatMap` in functional
- * programming with one important additional feature, which allows the input rows to be joined with
- * their output.
+ *将[[ Generator ]]应用于输入行流，并将其组合
+ *每个输出到一个新的行流。此操作类似于函数中的“flatMap”
+ *使用一个重要的附加功能进行编程，该功能允许输入行连接
+ *他们的输出。
  *
- * This operator supports whole stage code generation for generators that do not implement
- * terminate().
+ *此运算符支持未实现的生成器的整个阶段代码生成
+ * terminate（）。
  *
- * @param generator the generator expression
- * @param requiredChildOutput required attributes from child's output
- * @param outer when true, each input row will be output at least once, even if the output of the
- *              given `generator` is empty.
- * @param generatorOutput the qualified output attributes of the generator of this node, which
- *                        constructed in analysis phase, and we can not change it, as the
- *                        parent node bound with it already.
+ * @param  生成器生成器表达式
+ * @param  requiredChildOutput来自child输出的必需属性
+ * @param  外部为 true时，每个输入行至少输出一次，即使输出为
+ *         给出`generator`是空的。
+ * @param  generatorOutput此节点的生成器的限定输出属性，即
+ *         在分析阶段构建，我们无法改变它，因为
+ *         父节点已经与它绑定。
  */
 case class GenerateExec(
     generator: Generator,
@@ -75,7 +75,7 @@ case class GenerateExec(
   lazy val boundGenerator: Generator = BindReferences.bindReference(generator, child.output)
 
   protected override def doExecute(): RDD[InternalRow] = {
-    // boundGenerator.terminate() should be triggered after all of the rows in the partition
+    //应该在分区中的所有行之后触发boundGenerator.terminate（）
     val numOutputRows = longMetric("numOutputRows")
     child.execute().mapPartitionsWithIndexInternal { (index, iter) =>
       val generatorNullRow = new GenericInternalRow(generator.elementSchema.length)
@@ -90,7 +90,7 @@ case class GenerateExec(
 
         val joinedRow = new JoinedRow
         iter.flatMap { row =>
-          // we should always set the left (required child output)
+          //我们应该总是设置左边（必需的子输出）
           joinedRow.withLeft(pruneChildForResult(row))
           val outputRows = boundGenerator.eval(row)
           if (outer && outputRows.isEmpty) {
@@ -99,8 +99,8 @@ case class GenerateExec(
             outputRows.map(joinedRow.withRight)
           }
         } ++ LazyIterator(() => boundGenerator.terminate()).map { row =>
-          // we leave the left side as the last element of its child output
-          // keep it the same as Hive does
+          //我们将左侧作为其子输出的最后一个元素
+          //保持和Hive一样
           joinedRow.withRight(row)
         }
       } else {
@@ -114,7 +114,7 @@ case class GenerateExec(
         } ++ LazyIterator(() => boundGenerator.terminate())
       }
 
-      // Convert the rows to unsafe rows.
+      //将行转换为不安全的行。
       val proj = UnsafeProjection.create(output, output)
       proj.initialize(index)
       rows.map { r =>
