@@ -272,7 +272,7 @@ case class StateStoreRestoreExec(
 }
 
 /**
- * For each input tuple, the key is calculated and the tuple is `put` into the [[StateStore]].
+ * 对于每个输入元组，计算密钥并将元组“放入”[[ StateStore ]]。
  */
 case class StateStoreSaveExec(
     keyExpressions: Seq[Attribute],
@@ -287,7 +287,7 @@ case class StateStoreSaveExec(
     keyExpressions, child.output, stateFormatVersion)
 
   override protected def doExecute(): RDD[InternalRow] = {
-    metrics // force lazy init at driver
+    metrics //在驱动程序中强制执行lazy init
     assert(outputMode.nonEmpty,
       "Incorrect planning in IncrementalExecution, outputMode has not been set")
 
@@ -305,7 +305,7 @@ case class StateStoreSaveExec(
         val commitTimeMs = longMetric("commitTimeMs")
 
         outputMode match {
-          // Update and output all rows in the StateStore.
+          // 更新并输出StateStore中的所有行。
           case Some(Complete) =>
             allUpdatesTimeMs += timeTakenMs {
               while (iter.hasNext) {
@@ -324,8 +324,8 @@ case class StateStoreSaveExec(
               valueRow
             }
 
-          // Update and output only rows being evicted from the StateStore
-          // Assumption: watermark predicates must be non-empty if append mode is allowed
+          //仅更新并输出从StateStore中逐出的行
+          //假设：如果允许附加模式，水印谓词必须为非空
           case Some(Append) =>
             allUpdatesTimeMs += timeTakenMs {
               val filteredIter = iter.filter(row => !watermarkPredicateForData.get.eval(row))
@@ -364,11 +364,11 @@ case class StateStoreSaveExec(
               }
             }
 
-          // Update and output modified rows from the StateStore.
+          //从StateStore更新并输出修改后的行。
           case Some(Update) =>
 
             new NextIterator[InternalRow] {
-              // Filter late date using watermark if specified
+              //如果指定，使用水印过滤延迟日期
               private[this] val baseIterator = watermarkPredicateForData match {
                 case Some(predicate) => iter.filter((row: InternalRow) => !predicate.eval(row))
                 case None => iter
@@ -390,8 +390,8 @@ case class StateStoreSaveExec(
 
               override protected def close(): Unit = {
                 allUpdatesTimeMs += NANOSECONDS.toMillis(System.nanoTime - updatesStartTimeNs)
-
-                // Remove old aggregates if watermark specified
+               
+                //如果指定了watermark，则删除旧聚合
                 allRemovalsTimeMs += timeTakenMs {
                   removeKeysOlderThanWatermark(stateManager, store)
                 }
