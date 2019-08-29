@@ -177,8 +177,8 @@ object ObjectOperator {
 }
 
 /**
- * Applies the given function to input object iterator.
- * The output of its child must be a single-field row containing the input object.
+ * 将给定函数应用于输入对象迭代器。
+ * 其子项的输出必须是包含输入对象的单字段行。
  */
 case class MapPartitionsExec(
     func: Iterator[Any] => Iterator[Any],
@@ -255,11 +255,11 @@ case class MapPartitionsInRWithArrowExec(
 }
 
 /**
- * Applies the given function to each input object.
- * The output of its child must be a single-field row containing the input object.
+ *将给定函数应用于每个输入对象。
+ *其子项的输出必须是包含输入对象的单字段行。
  *
- * This operator is kind of a safe version of [[ProjectExec]], as its output is custom object,
- * we need to use safe row to contain it.
+ *此运算符是[[ ProjectExec ]] 的安全版本，因为它的输出是自定义对象，
+ *我们需要使用安全行来包含它。
  */
 case class MapElementsExec(
     func: AnyRef,
@@ -336,8 +336,8 @@ case class AppendColumnsExec(
 }
 
 /**
- * An optimized version of [[AppendColumnsExec]], that can be executed
- * on deserialized object directly.
+ * 可以执行的[[ AppendColumnsExec ]] 的优化版本
+ * 直接反序列化对象。
  */
 case class AppendColumnsWithObjectExec(
     func: Any => Any,
@@ -354,9 +354,13 @@ case class AppendColumnsWithObjectExec(
 
   override protected def doExecute(): RDD[InternalRow] = {
     child.execute().mapPartitionsInternal { iter =>
+      //子节点对象
       val getChildObject = ObjectOperator.unwrapObjectFromRow(child.output.head.dataType)
+      //输出子节点对象
       val outputChildObject = ObjectOperator.serializeObjectToRow(inputSerializer)
+      //输出新列
       val outputNewColumnOjb = ObjectOperator.serializeObjectToRow(newColumnsSerializer)
+      //合并
       val combiner = GenerateUnsafeRowJoiner.create(inputSchema, newColumnSchema)
 
       iter.map { row =>
