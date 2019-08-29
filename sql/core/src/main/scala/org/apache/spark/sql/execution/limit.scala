@@ -75,8 +75,8 @@ object BaseLimitExec {
 }
 
 /**
- * Helper trait which defines methods that are shared by both
- * [[LocalLimitExec]] and [[GlobalLimitExec]].
+ * 定义两者共享的方法
+ * [[ LocalLimitExec ]]和[[ GlobalLimitExec ]。
  */
 trait BaseLimitExec extends LimitExec with CodegenSupport {
   override def output: Seq[Attribute] = child.output
@@ -89,8 +89,8 @@ trait BaseLimitExec extends LimitExec with CodegenSupport {
     child.asInstanceOf[CodegenSupport].inputRDDs()
   }
 
-  // Mark this as empty. This plan doesn't need to evaluate any inputs and can defer the evaluation
-  // to the parent operator.
+  //将此标记为空 该计划不需要评估任何输入，可以推迟评估
+  //到父运算符。
   override def usedInputs: AttributeSet = AttributeSet.empty
 
   private lazy val countTerm = BaseLimitExec.newLimitCountTerm()
@@ -104,9 +104,9 @@ trait BaseLimitExec extends LimitExec with CodegenSupport {
   }
 
   override def doConsume(ctx: CodegenContext, input: Seq[ExprCode], row: ExprCode): String = {
-    // The counter name is already obtained by the upstream operators via `limitNotReachedChecks`.
-    // Here we have to inline it to not change its name. This is fine as we won't have many limit
-    // operators in one query.
+    //计数器名称已由上游运营商通过`limitNotReachedChecks`获得。
+    //这里我们必须内联它不要改变它的名字。这很好，因为我们没有太多限制
+    //一个查询中的运算符。
     ctx.addMutableState(CodeGenerator.JAVA_INT, countTerm, forceInline = true, useFreshName = false)
     s"""
        | if ($countTerm < $limit) {
@@ -118,7 +118,7 @@ trait BaseLimitExec extends LimitExec with CodegenSupport {
 }
 
 /**
- * Take the first `limit` elements of each child partition, but do not collect or shuffle them.
+ * 取每个子分区的第一个`limit`元素，但不要收集或随机播放它们。
  */
 case class LocalLimitExec(limit: Int, child: SparkPlan) extends BaseLimitExec {
 
@@ -128,7 +128,7 @@ case class LocalLimitExec(limit: Int, child: SparkPlan) extends BaseLimitExec {
 }
 
 /**
- * Take the first `limit` elements of the child's single output partition.
+ * 获取子单输出分区的第一个`limit`元素。
  */
 case class GlobalLimitExec(limit: Int, child: SparkPlan) extends BaseLimitExec {
 
