@@ -90,7 +90,7 @@ case class WindowExec(
 
   override def requiredChildDistribution: Seq[Distribution] = {
     if (partitionSpec.isEmpty) {
-      // Only show warning when the number of bytes is larger than 100 MiB?
+      //仅在字节数大于100 MiB时显示警告？
       logWarning("No Partition Defined for Window operation! Moving all data to a single "
         + "partition, this can cause serious performance degradation.")
       AllTuples :: Nil
@@ -105,21 +105,21 @@ case class WindowExec(
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
   protected override def doExecute(): RDD[InternalRow] = {
-    // Unwrap the expressions and factories from the map.
+    //从地图中解开表达式和工厂。
     val expressions = windowFrameExpressionFactoryPairs.flatMap(_._1)
     val factories = windowFrameExpressionFactoryPairs.map(_._2).toArray
     val inMemoryThreshold = sqlContext.conf.windowExecBufferInMemoryThreshold
     val spillThreshold = sqlContext.conf.windowExecBufferSpillThreshold
 
-    // Start processing.
+    //开始处理
     child.execute().mapPartitions { stream =>
       new Iterator[InternalRow] {
 
-        // Get all relevant projections.
+        //获取所有相关预测。
         val result = createResultProjection(expressions)
         val grouping = UnsafeProjection.create(partitionSpec, child.output)
 
-        // Manage the stream and the grouping.
+        //管理流和分组。
         var nextRow: UnsafeRow = null
         var nextGroup: UnsafeRow = null
         var nextRowAvailable: Boolean = false
@@ -135,7 +135,7 @@ case class WindowExec(
         }
         fetchNextRow()
 
-        // Manage the current partition.
+        //管理当前分区。
         val buffer: ExternalAppendOnlyUnsafeRowArray =
           new ExternalAppendOnlyUnsafeRowArray(inMemoryThreshold, spillThreshold)
 
@@ -145,11 +145,11 @@ case class WindowExec(
         val frames = factories.map(_(windowFunctionResult))
         val numFrames = frames.length
         private[this] def fetchNextPartition() {
-          // Collect all the rows in the current partition.
-          // Before we start to fetch new input rows, make a copy of nextGroup.
+          //收集当前分区中的所有行。
+          //在我们开始获取新输入行之前，请复制nextGroup。
           val currentGroup = nextGroup.copy()
 
-          // clear last partition
+          //清除最后一个分区
           buffer.clear()
 
           while (nextRowAvailable && nextGroup == currentGroup) {
@@ -157,19 +157,19 @@ case class WindowExec(
             fetchNextRow()
           }
 
-          // Setup the frames.
+          //设置框架。
           var i = 0
           while (i < numFrames) {
             frames(i).prepare(buffer)
             i += 1
           }
 
-          // Setup iteration
+          //安装迭代
           rowIndex = 0
           bufferIterator = buffer.generateIterator()
         }
 
-        // Iteration
+        //迭代
         var rowIndex = 0
 
         override final def hasNext: Boolean =
@@ -177,7 +177,7 @@ case class WindowExec(
 
         val join = new JoinedRow
         override final def next(): InternalRow = {
-          // Load the next partition if we need to.
+           //如果需要，加载下一个分区。
           if ((bufferIterator == null || !bufferIterator.hasNext) && nextRowAvailable) {
             fetchNextPartition()
           }
@@ -185,18 +185,18 @@ case class WindowExec(
           if (bufferIterator.hasNext) {
             val current = bufferIterator.next()
 
-            // Get the results for the window frames.
+            //获取窗框的结果。
             var i = 0
             while (i < numFrames) {
               frames(i).write(rowIndex, current)
               i += 1
             }
 
-            // 'Merge' the input row with the window function result
+            // '合并'输入行和窗口函数结果
             join(current, windowFunctionResult)
             rowIndex += 1
 
-            // Return the projection.
+            //返回投影。
             result(join)
           } else {
             throw new NoSuchElementException
