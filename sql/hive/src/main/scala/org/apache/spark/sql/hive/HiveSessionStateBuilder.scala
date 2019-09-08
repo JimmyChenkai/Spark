@@ -31,7 +31,7 @@ import org.apache.spark.sql.hive.client.HiveClient
 import org.apache.spark.sql.internal.{BaseSessionStateBuilder, SessionResourceLoader, SessionState}
 
 /**
- * Builder that produces a Hive-aware `SessionState`.
+ * 生成Hive感知的`SessionState`的构建器。
  */
 @Experimental
 @Unstable
@@ -41,7 +41,7 @@ class HiveSessionStateBuilder(session: SparkSession, parentState: Option[Session
   private def externalCatalog: ExternalCatalogWithListener = session.sharedState.externalCatalog
 
   /**
-   * Create a Hive aware resource loader.
+   * 创建一个Hive感知资源加载器。
    */
   override protected lazy val resourceLoader: HiveSessionResourceLoader = {
     new HiveSessionResourceLoader(
@@ -49,7 +49,7 @@ class HiveSessionStateBuilder(session: SparkSession, parentState: Option[Session
   }
 
   /**
-   * Create a [[HiveSessionCatalog]].
+   * 创建 [[HiveSessionCatalog]].
    */
   override protected lazy val catalog: HiveSessionCatalog = {
     val catalog = new HiveSessionCatalog(
@@ -66,7 +66,7 @@ class HiveSessionStateBuilder(session: SparkSession, parentState: Option[Session
   }
 
   /**
-   * A logical query plan `Analyzer` with rules specific to Hive.
+   * 一个逻辑查询计划`Analyzer`，具有特定于Hive的规则。
    */
   override protected def analyzer: Analyzer = new Analyzer(catalog, conf) {
     override val extendedResolutionRules: Seq[Rule[LogicalPlan]] =
@@ -97,7 +97,7 @@ class HiveSessionStateBuilder(session: SparkSession, parentState: Option[Session
   }
 
   /**
-   * Planner that takes into account Hive-specific strategies.
+   * 计划者考虑到特定于Hive的策略。
    */
   override protected def planner: SparkPlanner = {
     new SparkPlanner(session.sparkContext, conf, experimentalMethods) with HiveStrategies {
