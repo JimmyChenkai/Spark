@@ -18,26 +18,31 @@
 package org.apache.spark.deploy.client
 
 /**
- * Callbacks invoked by deploy client when various events happen. There are currently five events:
- * connecting to the cluster, disconnecting, being given an executor, having an executor removed
- * (either due to failure or due to revocation), and having a worker removed.
+ * 当各种事件发生时，能够及时通知StandaloneSchedulerBackend的回调
+ * 目前有四个事件回调函数
+ * 1.成功连接 2.断开连接  3.添加一个executor  4.移除一个executor
  *
  * Users of this API should *not* block inside the callback methods.
  */
 private[spark] trait StandaloneAppClientListener {
+  //  向master成功注册application，成功连接到集群
   def connected(appId: String): Unit
 
-  /** Disconnection may be a temporary state, as we fail over to a new Master. */
+  //  断开连接
+  //  断开连接可能是临时的，可能是原master故障，等待master切换后，会恢复连接
   def disconnected(): Unit
 
-  /** An application death is an unrecoverable failure condition. */
+  //  application由于不可恢复的错误停止
   def dead(reason: String): Unit
 
+  //  添加一个executor
   def executorAdded(
       fullId: String, workerId: String, hostPort: String, cores: Int, memory: Int): Unit
 
+  //  移除一个executor
   def executorRemoved(
       fullId: String, message: String, exitStatus: Option[Int], workerLost: Boolean): Unit
 
+  //  移除一个worker
   def workerRemoved(workerId: String, host: String, message: String): Unit
 }
