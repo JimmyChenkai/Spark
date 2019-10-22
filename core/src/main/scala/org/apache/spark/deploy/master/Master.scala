@@ -620,6 +620,7 @@ private[deploy] class Master(
     var coresToAssign = math.min(app.coresLeft, usableWorkers.map(_.coresFree).sum)
 
     /** Return whether the specified worker can launch an executor for this app. */
+    //是否可以在一个worker上分配Executor
     def canLaunchExecutor(pos: Int): Boolean = {
       val keepScheduling = coresToAssign >= minCoresPerExecutor
       val enoughCores = usableWorkers(pos).coresFree - assignedCores(pos) >= minCoresPerExecutor
@@ -628,6 +629,7 @@ private[deploy] class Master(
       // Otherwise, if there is already an executor on this worker, just give it more cores.
       val launchingNewExecutor = !oneExecutorPerWorker || assignedExecutors(pos) == 0
       if (launchingNewExecutor) {
+        //在这里，需要检查worker的空闲core和内存是否够用
         val assignedMemory = assignedExecutors(pos) * memoryPerExecutor
         val enoughMemory = usableWorkers(pos).memoryFree - assignedMemory >= memoryPerExecutor
         val underLimit = assignedExecutors.sum + app.executors.size < app.executorLimit
@@ -635,6 +637,7 @@ private[deploy] class Master(
       } else {
         // We're adding cores to an existing executor, so no need
         // to check memory and executor limits
+        //尤其需要注意的是，oneExecutorPerWorker机制下，不检测内存限制，很重要。
         keepScheduling && enoughCores
       }
     }
@@ -646,11 +649,14 @@ private[deploy] class Master(
       freeWorkers.foreach { pos =>
         var keepScheduling = true
         while (keepScheduling && canLaunchExecutor(pos)) {
+          //要分配的cores
           coresToAssign -= minCoresPerExecutor
+          //已分配的cores
           assignedCores(pos) += minCoresPerExecutor
 
           // If we are launching one executor per worker, then every iteration assigns 1 core
           // to the executor. Otherwise, every iteration assigns cores to a new executor.
+          //一个worker只启动一个Executor
           if (oneExecutorPerWorker) {
             assignedExecutors(pos) = 1
           } else {
@@ -661,6 +667,7 @@ private[deploy] class Master(
           // many workers as possible. If we are not spreading out, then we should keep
           // scheduling executors on this worker until we use all of its resources.
           // Otherwise, just move on to the next worker.
+          //如果没有开启spreadOUt算法，就一直在一个worker上分配，直到不能再分配为止。
           if (spreadOutApps) {
             keepScheduling = false
           }
