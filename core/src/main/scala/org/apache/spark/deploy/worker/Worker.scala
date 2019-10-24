@@ -498,21 +498,23 @@ private[deploy] class Worker(
       registerWithMaster()
 
     case LaunchExecutor(masterUrl, appId, execId, appDesc, cores_, memory_) =>
+      //  判断是否是alive master发送来的消息
       if (masterUrl != activeMasterUrl) {
+        //  如果不是，打印warn信息，无效的master尝试启动executor
         logWarning("Invalid Master (" + masterUrl + ") attempted to launch executor.")
       } else {
         try {
           logInfo("Asked to launch executor %s/%d for %s".format(appId, execId, appDesc.name))
 
-          // Create the executor's working directory
+          //  创建executor工作目录
           val executorDir = new File(workDir, appId + "/" + execId)
           if (!executorDir.mkdirs()) {
             throw new IOException("Failed to create directory " + executorDir)
           }
 
-          // Create local dirs for the executor. These are passed to the executor via the
-          // SPARK_EXECUTOR_DIRS environment variable, and deleted by the Worker when the
-          // application finishes.
+          //  为executor创建本地目录
+          //  executor在环境变量中获取SPARK_EXECUTOR_DIRS配置
+          //  application完成后，worker将其删除
           val appLocalDirs = appDirectories.getOrElse(appId, {
             val localRootDirs = Utils.getOrCreateLocalRootDirs(conf)
             val dirs = localRootDirs.flatMap { dir =>
@@ -533,6 +535,7 @@ private[deploy] class Worker(
             dirs
           })
           appDirectories(appId) = appLocalDirs
+          //  worker将接受到的信息，封装成ExecutorRunner对象
           val manager = new ExecutorRunner(
             appId,
             execId,
@@ -552,6 +555,7 @@ private[deploy] class Worker(
             appLocalDirs,
             ExecutorState.LAUNCHING)
           executors(appId + "/" + execId) = manager
+          //  调用ExecutorRunner的start方法，启动线程
           manager.start()
           coresUsed += cores_
           memoryUsed += memory_
@@ -562,6 +566,7 @@ private[deploy] class Worker(
               executors(appId + "/" + execId).kill()
               executors -= appId + "/" + execId
             }
+            //  向master发送消息，报告当前executor的状态
             sendToMaster(ExecutorStateChanged(appId, execId, ExecutorState.FAILED,
               Some(e.toString), None))
         }
